@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invoice Generator</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; background-color: #f9f9f9; color: #333; }
+        .container { background-color: #fff; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 800px; margin: 20px auto; }
+        h1, h2 { color: #333; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        h1 { text-align: center; }
+        label { display: block; margin-top: 15px; margin-bottom: 5px; font-weight: bold; }
+        input[type="text"], input[type="number"], input[type="date"], select, textarea {
+            width: calc(100% - 22px); /* Full width minus padding and border */
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box; /* Important for width calculation */
+        }
+        textarea { min-height: 80px; }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        button:hover { background-color: #0056b3; }
+        .error { color: red; margin-bottom: 15px; padding: 10px; background-color: #ffebeb; border: 1px solid red; border-radius: 4px;}
+        .form-section { margin-bottom: 20px; padding: 15px; background-color: #fdfdfd; border: 1px solid #eee; border-radius: 5px;}
+        .profile-actions { margin-top: 20px; margin-bottom: 20px;}
+        .profile-actions a {
+            text-decoration: none;
+            padding: 10px 15px;
+            background-color: #28a745; /* Green for add */
+            color: white;
+            border-radius: 4px;
+            margin-right: 10px;
+        }
+        .profile-actions a:hover { background-color: #218838; }
+        .profile-list-item { display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px solid #eee;}
+        .profile-list-item:last-child { border-bottom: none; }
+        .profile-list-item .edit-link {
+            text-decoration: none;
+            padding: 5px 10px;
+            background-color: #ffc107; /* Yellow for edit */
+            color: #333;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+        .profile-list-item .edit-link:hover { background-color: #e0a800; }
+        .flash-messages { list-style: none; padding: 0; margin-bottom: 15px; }
+        .flash-messages li { padding: 10px; margin-bottom: 10px; border-radius: 4px; }
+        .flash-messages .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .flash-messages .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Invoice Generator</h1>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <ul class="flash-messages">
+                {% for category, message in messages %}
+                    <li class="{{ category }}">{{ message }}</li>
+                {% endfor %}
+                </ul>
+            {% endif %}
+        {% endwith %}
+
+        {% if error %}
+            <p class="error">Error: {{ error }}</p>
+        {% endif %}
+
+        <div class="profile-actions">
+            <a href="{{ url_for('list_profiles') }}">Manage Buyer Profiles</a>
+        </div>
+
+        <div style="display: flex; gap: 20px;">
+            <form action="{{ url_for('generate_invoice') }}" method="POST" style="flex: 1;">
+                <div class="form-section">
+                    <h2>Buyer and Invoice Details</h2>
+                    <label for="buyer_profile_id">Select Buyer Profile:</label>
+                    {% if buyer_profiles %}
+                        <select id="buyer_profile_id" name="buyer_profile_id" required>
+                            <option value="">-- Select Buyer --</option>
+                            {% for profile in buyer_profiles %}
+                                <option value="{{ profile.profile_id }}">{{ profile.buyer_name }} ({{ profile.gstin if profile.gstin else 'No GSTIN' }})</option>
+                            {% endfor %}
+                        </select>
+                    {% else %}
+                        <p>No buyer profiles found. <a href="{{ url_for('manage_profile') }}">Add one now via Manage Profiles.</a></p>
+                    {% endif %}
+
+                    <label for="invoice_number">Invoice Number:</label>
+                    <input type="text" name="invoice_number" id="invoice_number" required>
+
+                    <label for="invoice_date">Invoice Date:</label>
+                    <input type="date" name="invoice_date" id="invoice_date" value="{{ today_date }}" required>
+                </div>
+
+                <div class="form-section">
+                    <h2>Transport Details</h2>
+                    <label for="transport_mode">Select Transport Mode (or type new):</label>
+                    <input list="transport_modes_list" name="transport_mode" id="transport_mode" class="full-width">
+                    <datalist id="transport_modes_list">
+                        {% for mode in transport_modes %}
+                            <option value="{{ mode }}">
+                        {% endfor %}
+                    </datalist>
+                    <input type="text" name="new_transport_mode" id="new_transport_mode" placeholder="Or type new transport mode here if not in list">
+                </div>
+                
+                <div class="form-section">
+                    <h2>Item Details</h2>
+                    <p class="info-text">Currently supports one item per invoice.</p>
+                    <label for="item_description_bags">Number of Bags (for description):</label>
+                    <input type="number" name="item_description_bags" id="item_description_bags" step="1" placeholder="e.g., 6">
+                    
+                    <label for="item_base_description">Base Item Description (Optional):</label>
+                    <input type="text" name="item_base_description" id="item_base_description" value="1. Aluminium Utensils" placeholder="e.g., Aluminium Utensils">
+
+                    <label for="quantity">Quantity (e.g., 287.100):</label>
+                    <input type="number" name="quantity" id="quantity" step="any" required>
+
+                    <label for="rate">Rate (e.g., 270.00):</label>
+                    <input type="number" name="rate" id="rate" step="any" required>
+                </div>
+
+                <div class="form-section">
+                    <h2>Tax Type Override (for Preview & Invoice)</h2>
+                    <p style="font-size: 0.9em; color: #555;">Select to override the buyer's default tax type. This will affect the current preview and the generated invoice.</p>
+                    <div style="display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
+                        <label style="display: flex; align-items: center; gap: 5px; cursor:pointer;">
+                            <input type="radio" name="tax_type_override" value="PROFILE_DEFAULT" checked disabled> Use Profile Default (<span id="profile_default_tax_type_indicator">IGST</span>)
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 5px; cursor:pointer;">
+                            <input type="radio" name="tax_type_override" value="IGST"> IGST
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 5px; cursor:pointer;">
+                            <input type="radio" name="tax_type_override" value="CGST_SGST"> CGST/SGST
+                        </label>
+                    </div>
+                </div>
+
+                <button type="submit">Generate Invoice</button>
+            </form>
+
+            <div class="form-section" id="invoice-preview-area" style="flex: 1; border-left: 2px solid #007bff; padding-left: 20px;">
+                <h2>Live Preview</h2>
+                <p><strong>Invoice Number:</strong> <span id="preview_invoice_number"></span></p>
+                <p><strong>Invoice Date:</strong> <span id="preview_invoice_date"></span></p>
+                
+                <h4>Buyer:</h4>
+                <p><strong id="preview_buyer_name"></strong></p>
+                <div id="preview_buyer_details"></div>
+                
+                <p><strong>Mode of Transport:</strong> <span id="preview_mode_of_transport"></span></p>
+                
+                <h4>Item:</h4>
+                <p><strong>Description:</strong> <span id="preview_item_description"></span></p>
+                <p><strong>Quantity:</strong> <span id="preview_quantity"></span></p>
+                <p><strong>Rate:</strong> <span id="preview_rate"></span></p>
+                <!-- Calculated fields will be populated here -->
+                <p><strong>Item Amount:</strong> <span id="preview_item_amount">0.00</span></p>
+                <p><strong>Subtotal:</strong> <span id="preview_subtotal">0.00</span></p>
+                <p><strong>IGST (12%):</strong> <span id="preview_igst_amount">0.00</span></p>
+                <p><strong>CGST (6%):</strong> <span id="preview_cgst_amount">0.00</span></p>
+                <p><strong>SGST (6%):</strong> <span id="preview_sgst_amount">0.00</span></p>
+                <p><strong>Round Off:</strong> <span id="preview_round_off">0.00</span></p>
+                <p><strong>TOTAL:</strong> <strong id="preview_total_amount">0.00</strong></p>
+                <p><strong>Amount in Words:</strong> <span id="preview_amount_in_words">Zero Only</span></p>
+                
+                <p><strong>Tax Type (for calculation):</strong> <span id="preview_tax_type_calc"></span></p>
+            </div>
+        </div>
+
+    </div> <!-- Closing container -->
+
+    <script>
+        const buyerProfiles = JSON.parse('{{ buyer_profiles|tojson|safe }}');
+        const defaultItemBaseDescriptionFromHTML = document.getElementById('item_base_description').value; 
+        // defaultItemPrefix should be what you expect, e.g., "1. " or an empty string if no auto-prefix
+        const defaultItemPrefix = defaultItemBaseDescriptionFromHTML.startsWith("1. ") ? "1. " : "";
+        const actualDefaultItemBase = defaultItemBaseDescriptionFromHTML.replace(defaultItemPrefix, '');
+
+        async function updatePreview() {
+            // Invoice Number & Date
+            const rawInvoiceNumber = document.getElementById('invoice_number').value;
+            const rawInvoiceDate = document.getElementById('invoice_date').value;
+            document.getElementById('preview_invoice_number').textContent = rawInvoiceNumber ? ("INVOICE No. " + rawInvoiceNumber) : "";
+            document.getElementById('preview_invoice_date').textContent = rawInvoiceDate ? ("Date : " + rawInvoiceDate) : "";
+
+            // Buyer Details
+            const selectedProfileId = document.getElementById('buyer_profile_id').value;
+            const buyerNameEl = document.getElementById('preview_buyer_name');
+            const buyerDetailsEl = document.getElementById('preview_buyer_details');
+            buyerNameEl.textContent = 'N/A';
+            buyerDetailsEl.innerHTML = ''; // Clear previous details
+
+            let profileDefaultTaxType = 'IGST'; // Default for profile tax type
+
+            if (selectedProfileId) {
+                const profile = buyerProfiles.find(p => p.profile_id === selectedProfileId);
+                if (profile) {
+                    buyerNameEl.textContent = profile.buyer_name;
+                    if (profile.buyer_details && profile.buyer_details.length > 0) {
+                        profile.buyer_details.forEach(line => {
+                            const p = document.createElement('p');
+                            p.textContent = line;
+                            p.style.margin = '2px 0';
+                            buyerDetailsEl.appendChild(p);
+                        });
+                    } else {
+                        buyerDetailsEl.innerHTML = '<p style="margin:2px 0">No address details available.</p>';
+                    }
+                    if (profile.default_tax_type) {
+                        profileDefaultTaxType = profile.default_tax_type;
+                    }
+                }
+            }
+            document.getElementById('profile_default_tax_type_indicator').textContent = profileDefaultTaxType;
+
+
+            // Mode of Transport
+            const selectedTransport = document.getElementById('transport_mode').value;
+            const newTransport = document.getElementById('new_transport_mode').value.trim();
+            document.getElementById('preview_mode_of_transport').textContent = newTransport ? newTransport : selectedTransport;
+
+            // Item Details
+            let itemBaseInput = document.getElementById('item_base_description').value.trim();
+            let itemDescription = "";
+            if (itemBaseInput) {
+                itemDescription = itemBaseInput;
+            } else {
+                itemDescription = defaultItemPrefix + actualDefaultItemBase; // Use the initial value if field is cleared
+            }
+            
+            const itemBags = document.getElementById('item_description_bags').value.trim();
+            if (itemBags) {
+                itemDescription += ` (${itemBags} Bags)`;
+            }
+            document.getElementById('preview_item_description').textContent = itemDescription;
+            
+            const quantity = parseFloat(document.getElementById('quantity').value) || 0;
+            const rate = parseFloat(document.getElementById('rate').value) || 0;
+            document.getElementById('preview_quantity').textContent = quantity.toFixed(3); // Show quantity with precision
+            document.getElementById('preview_rate').textContent = rate.toFixed(2); // Show rate with precision
+
+            // Determine Tax Type for Calculation
+            // const taxTypeOverrideRadio = document.querySelector('input[name="tax_type_override"]:checked'); // Old line
+            const selectedTaxOverrideRadio = document.querySelector('input[name="tax_type_override"]:not([disabled]):checked');
+
+            let calcTaxTypeForAPI;
+            let taxTypeDisplayString;
+
+            if (selectedTaxOverrideRadio) { // User has selected an explicit override (IGST or CGST_SGST)
+                calcTaxTypeForAPI = selectedTaxOverrideRadio.value;
+                taxTypeDisplayString = `${calcTaxTypeForAPI} (User Override)`;
+            } else { // No explicit override selected, default to IGST for calculation
+                calcTaxTypeForAPI = 'IGST';
+                taxTypeDisplayString = `Using IGST (Profile's actual default: ${profileDefaultTaxType})`;
+            }
+            
+            document.getElementById('preview_tax_type_calc').textContent = taxTypeDisplayString;
+
+            // AJAX call to get calculated values
+            try {
+                const response = await fetch("{{ url_for('calculate_preview_route') }}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': '{{ csrf_token() if csrf_token else "" }}' // If you use CSRF protection
+                    },
+                    body: JSON.stringify({
+                        quantity: quantity,
+                        rate: rate,
+                        tax_type: calcTaxTypeForAPI
+                    }),
+                });
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({})) // Gracefully handle non-JSON error response
+                    console.error('Calculation error:', errorData.error || response.statusText);
+                    document.getElementById('preview_item_amount').textContent = 'Error';
+                    document.getElementById('preview_subtotal').textContent = 'Error';
+                    document.getElementById('preview_igst_amount').textContent = 'Error';
+                    document.getElementById('preview_cgst_amount').textContent = 'Error';
+                    document.getElementById('preview_sgst_amount').textContent = 'Error';
+                    document.getElementById('preview_round_off').textContent = 'Error';
+                    document.getElementById('preview_total_amount').textContent = 'Error';
+                    document.getElementById('preview_amount_in_words').textContent = 'Error calculating...';
+                    return;
+                }
+                const results = await response.json();
+                document.getElementById('preview_item_amount').textContent = results.item_amount || '0.00';
+                document.getElementById('preview_subtotal').textContent = results.subtotal || '0.00';
+                document.getElementById('preview_igst_amount').textContent = results.igst_amount || '0.00';
+                document.getElementById('preview_cgst_amount').textContent = results.cgst_amount || '0.00';
+                document.getElementById('preview_sgst_amount').textContent = results.sgst_amount || '0.00';
+                document.getElementById('preview_round_off').textContent = results.round_off_value || '0.00';
+                document.getElementById('preview_total_amount').textContent = results.rounded_total || '0.00';
+                document.getElementById('preview_amount_in_words').textContent = results.amount_in_words || 'Not available';
+
+            } catch (error) {
+                console.error('Failed to fetch calculation:', error);
+                document.getElementById('preview_item_amount').textContent = 'N/A';
+                document.getElementById('preview_subtotal').textContent = 'N/A';
+                document.getElementById('preview_igst_amount').textContent = 'N/A';
+                document.getElementById('preview_cgst_amount').textContent = 'N/A';
+                document.getElementById('preview_sgst_amount').textContent = 'N/A';
+                document.getElementById('preview_round_off').textContent = 'N/A';
+                document.getElementById('preview_total_amount').textContent = 'N/A';
+                document.getElementById('preview_amount_in_words').textContent = 'Calculation failed.';
+            }
+        }
+
+        // Attach event listeners to all relevant form fields
+        document.getElementById('buyer_profile_id').addEventListener('change', updatePreview);
+        document.getElementById('invoice_number').addEventListener('input', updatePreview);
+        document.getElementById('invoice_date').addEventListener('change', updatePreview);
+        document.getElementById('transport_mode').addEventListener('input', updatePreview);
+        document.getElementById('new_transport_mode').addEventListener('input', updatePreview);
+        document.getElementById('item_base_description').addEventListener('input', updatePreview);
+        document.getElementById('item_description_bags').addEventListener('input', updatePreview);
+        document.getElementById('quantity').addEventListener('input', updatePreview);
+        document.getElementById('rate').addEventListener('input', updatePreview);
+        document.querySelectorAll('input[name="tax_type_override"]').forEach(radio => {
+            radio.addEventListener('change', updatePreview);
+        });
+
+        // Initial call to populate preview if there are default values (e.g., date)
+        updatePreview();
+    </script>
+
+</body>
+</html>
