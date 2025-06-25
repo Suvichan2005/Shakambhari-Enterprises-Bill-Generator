@@ -7,7 +7,6 @@
 !templates/*.html
 !requirements.txt
 !README.md
-!.gitignore
 
 # Exclude personal and sensitive files
 buyer_profiles.json
