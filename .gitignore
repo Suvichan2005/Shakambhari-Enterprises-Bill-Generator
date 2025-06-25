@@ -1,0 +1,24 @@
+# Ignore everything
+*
+
+# But not these files...
+!*.py
+!templates/
+!templates/*.html
+!requirements.txt
+!README.md
+!.gitignore
+
+# Exclude personal and sensitive files
+buyer_profiles.json
+transport_modes.json
+output_bill_cgst_sgst.xlsx
+output_bill_igst.xlsx
+Shakambhari Bill Gen.bat
+__pycache__/
+2024-25/
+Ewaybills/
+Generated_Invoices/
+Generated_Invoices_PDF/
+GST Invoices/
+copy1.py
