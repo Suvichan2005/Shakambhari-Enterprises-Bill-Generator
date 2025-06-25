@@ -192,9 +192,25 @@
         async function updatePreview() {
             // Invoice Number & Date
             const rawInvoiceNumber = document.getElementById('invoice_number').value;
-            const rawInvoiceDate = document.getElementById('invoice_date').value;
+            const rawInvoiceDate = document.getElementById('invoice_date').value; // This is YYYY-MM-DD
             document.getElementById('preview_invoice_number').textContent = rawInvoiceNumber ? ("INVOICE No. " + rawInvoiceNumber) : "";
-            document.getElementById('preview_invoice_date').textContent = rawInvoiceDate ? ("Date : " + rawInvoiceDate) : "";
+            
+            // Format date as DD-MM-YYYY for preview
+            let formattedDateForPreview = "";
+            if (rawInvoiceDate) { // rawInvoiceDate is in YYYY-MM-DD format from <input type="date">
+                try {
+                    const [yyyy, mm, dd] = rawInvoiceDate.split("-");
+                    if (dd && mm && yyyy) { // Basic check
+                        formattedDateForPreview = `Date : ${dd}-${mm}-${yyyy}`;
+                    } else {
+                        formattedDateForPreview = "Date : Invalid date"; // Handle potential split issue
+                    }
+                } catch (e) {
+                    console.error("Error formatting date for preview:", e);
+                    formattedDateForPreview = "Date : Error";
+                }
+            }
+            document.getElementById('preview_invoice_date').textContent = formattedDateForPreview;
 
             // Buyer Details
             const selectedProfileId = document.getElementById('buyer_profile_id').value;

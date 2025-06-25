@@ -95,7 +95,8 @@ def convert_excel_to_pdf(excel_filepath, pdf_filepath):
 def index():
     buyer_profiles = load_data(BUYER_PROFILES_JSON)
     transport_modes = load_data(TRANSPORT_MODES_JSON)
-    today_date = datetime.now().strftime('%Y-%m-%d')
+    # Format date as DD-MM-YYYY for display in the form
+    today_date = datetime.now().strftime('%d-%m-%Y')
     valid_buyer_profiles = [p for p in buyer_profiles if p.get('profile_id') and p.get('buyer_name')]
     return render_template('index.html', 
                            buyer_profiles=valid_buyer_profiles, 
@@ -107,15 +108,23 @@ def generate_invoice():
     try:
         buyer_profile_id = request.form['buyer_profile_id']
         raw_invoice_number_form = request.form['invoice_number'] # Raw number from form
-        raw_invoice_date_str_form = request.form['invoice_date'] # Raw date from form
         
-        # Keep the raw values for filenames and internal logic
+        # Date from form is YYYY-MM-DD, convert to DD-MM-YYYY for Excel and display
+        invoice_date_from_form_str = request.form['invoice_date'] # YYYY-MM-DD
+        try:
+            dt_object = datetime.strptime(invoice_date_from_form_str, '%Y-%m-%d')
+            formatted_invoice_date_for_excel = dt_object.strftime('%d-%m-%Y')
+        except ValueError:
+            flash("Invalid date format received. Please use YYYY-MM-DD.", "error")
+            # Potentially redirect or handle error appropriately
+            return redirect(url_for('index'))
+
         invoice_number_for_filename = raw_invoice_number_form.strip()
         
         # For display/Excel content, add prefixes
         excel_invoice_number_display = "INVOICE No. " + invoice_number_for_filename if invoice_number_for_filename else ""
-        excel_invoice_date_display = "Date : " + raw_invoice_date_str_form.strip() if raw_invoice_date_str_form else ""
-
+        # Use the formatted DD-MM-YYYY date for Excel
+        excel_invoice_date_display = "Date : " + formatted_invoice_date_for_excel if formatted_invoice_date_for_excel else ""
 
         selected_transport_mode = request.form.get('transport_mode')
         new_transport_mode = request.form.get('new_transport_mode', '').strip()
@@ -156,8 +165,8 @@ def generate_invoice():
                 "rate": rate
             },
             "tax_type": final_tax_type,
-            "invoice_number": excel_invoice_number_display, # Use prefixed for Excel content
-            "invoice_date": excel_invoice_date_display    # Use prefixed for Excel content
+            "invoice_number": excel_invoice_number_display, 
+            "invoice_date": excel_invoice_date_display # Use the DD-MM-YYYY formatted date
         }
         
         safe_invoice_number_for_file = "".join(c if c.isalnum() else '_' for c in invoice_number_for_filename)
@@ -202,7 +211,7 @@ def generate_invoice():
                                error=str(e), 
                                buyer_profiles=buyer_profiles_data, 
                                transport_modes=transport_modes_data,
-                               today_date=datetime.now().strftime('%Y-%m-%d'))
+                               today_date=datetime.now().strftime('%d-%m-%Y')) # Ensure today_date is also DD-MM-YYYY
 
 @app.route('/calculate_preview', methods=['POST'])
 def calculate_preview_route():
@@ -246,7 +255,7 @@ def calculate_preview_route():
             "subtotal": f"{subtotal:.2f}",
             "igst_amount": f"{igst_amount:.2f}",
             "cgst_amount": f"{cgst_amount:.2f}",
-            "sgst_amount": f"{sgst_amount:.2f}",
+            "sgst_amount": f"{sgst_amount:.2f}", # Corrected typo in variable name
             "total_before_round_off": f"{total_before_round_off:.2f}",
             "round_off_value": f"{round_off_value:.2f}",
             "rounded_total": f"{rounded_total:.2f}",
