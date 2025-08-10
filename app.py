@@ -4,88 +4,18 @@ from flask import Flask, render_template, request, redirect, url_for, send_from_
 from datetime import datetime
 import uuid  # For generating unique IDs for new profiles without GSTIN
 from num2words import num2words # For converting numbers to words
-import pythoncom # Added for win32com
 from typing import Any, List
-from copy1 import copy_excel_with_formatting
-from config import (BUYER_PROFILES_JSON, TRANSPORT_MODES_JSON, OUTPUT_DIR, PDF_OUTPUT_DIR, TEMPLATE_EXCEL_FILE, ensure_dirs, BASE_DIR)
+from excel_utils import generate_excel_invoice
+from pdf_utils import generate_pdf_invoice
+from data_manager import load_data, save_data
+from invoice_utils import get_next_invoice_number, update_last_invoice_number
+from config import (BUYER_PROFILES_JSON, TRANSPORT_MODES_JSON, OUTPUT_DIR, PDF_OUTPUT_DIR, TEMPLATE_EXCEL_FILE, ensure_dirs, BASE_DIR, TAX_RATES)
 
-# Attempt to import win32com.client for PDF conversion
-try:
-    import win32com.client
-    WIN32COM_AVAILABLE = True
-except ImportError:
-    WIN32COM_AVAILABLE = False
-    print("WARNING: pywin32 library not found. PDF conversion will be skipped.")
 
 app = Flask(__name__)
 app.secret_key = 'shakambhari-secret'  # Needed for flash messages (simplified)
 ensure_dirs()  # make sure output dirs exist
-BACKUP_DIR = os.path.join(BASE_DIR, "_backups")
-os.makedirs(BACKUP_DIR, exist_ok=True)
 
-def backup_json(path: str):
-    if not os.path.isfile(path):
-        return
-    try:
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_file = os.path.join(BACKUP_DIR, f"{os.path.basename(path)}.{stamp}.bak")
-        with open(path, 'rb') as src, open(backup_file, 'wb') as dst:
-            dst.write(src.read())
-    except Exception as e:
-        print(f"WARNING: Backup failed for {path}: {e}")
-
-def load_data(json_path):
-    try:
-        with open(json_path, 'r') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return []
-    except json.JSONDecodeError:
-        flash(f"Error decoding JSON from {json_path}. Please check its format.", "error")
-        return []  # Return empty list if JSON is malformed
-
-def save_data(json_path, data):
-    try:
-        backup_json(json_path)
-        with open(json_path, 'w') as f:
-            json.dump(data, f, indent=4)
-        return True
-    except IOError:
-        flash(f"Error saving data to {json_path}.", "error")
-        return False
-
-def _financial_year_suffix(today: datetime | None = None) -> str:
-    today = today or datetime.now()
-    year = today.year
-    if today.month >= 4:  # Financial year starts April
-        start = year
-        end = year + 1
-    else:
-        start = year - 1
-        end = year
-    return f"/{start}-{str(end)[-2:]}"  # e.g. /2025-26
-
-def next_invoice_number(existing_files: List[str]) -> str:
-    import re
-    max_num = 0
-    pattern = re.compile(r"Invoice_(\d+)_")
-    for fname in existing_files:
-        m = pattern.search(fname)
-        if m:
-            try:
-                num = int(m.group(1))
-                if num > max_num:
-                    max_num = num
-            except ValueError:
-                continue
-    return f"{max_num + 1:03d}{_financial_year_suffix()}"
-
-def suggest_next_invoice_number() -> str:
-    try:
-        files = os.listdir(OUTPUT_DIR)
-    except FileNotFoundError:
-        files = []
-    return next_invoice_number(files)
 
 TRANSPORT_PREFIX_VARIANTS = [
     'mode of transport:', 'mode of transports:', 'mode of transport', 'mode of transports'
@@ -105,43 +35,13 @@ def normalize_transport_mode(raw: str | None) -> str:
         return ''
     return f"Mode of Transport: {val}"  # canonical form
 
-def convert_excel_to_pdf(excel_filepath, pdf_filepath):
-    if not WIN32COM_AVAILABLE:
-        print(f"Skipping PDF conversion for {excel_filepath} as pywin32 is not available.")
-        return False
-    excel = None
-    workbook = None
-    pythoncom.CoInitialize()
-    try:
-        excel = win32com.client.Dispatch("Excel.Application")
-        excel.Visible = False
-        if not os.path.exists(excel_filepath):
-            print(f"Error: Excel file not found at {excel_filepath} for PDF conversion.")
-            return False
-        workbook = excel.Workbooks.Open(excel_filepath)
-        os.makedirs(os.path.dirname(pdf_filepath), exist_ok=True)
-        workbook.ExportAsFixedFormat(0, pdf_filepath, Quality=0, IncludeDocProperties=True, IgnorePrintAreas=False, OpenAfterPublish=False)
-        print(f"Successfully converted {excel_filepath} to {pdf_filepath}")
-        return True
-    except Exception as e:
-        print(f"Error converting Excel to PDF: {e}")
-        if hasattr(e, 'com_error'):
-            print(f"COM Error details: {e.com_error}")
-        return False
-    finally:
-        if workbook:
-            workbook.Close(SaveChanges=False)
-        if excel:
-            excel.Quit()
-        pythoncom.CoUninitialize()
-
 @app.route('/')
 def index():
     buyer_profiles = load_data(BUYER_PROFILES_JSON)
     transport_modes = load_data(TRANSPORT_MODES_JSON)
     today_date = datetime.now().strftime('%Y-%m-%d')  # html date input format
     valid_buyer_profiles = [p for p in buyer_profiles if p.get('profile_id') and p.get('buyer_name')]
-    suggestion = suggest_next_invoice_number()
+    suggestion = get_next_invoice_number()
     return render_template('index.html', buyer_profiles=valid_buyer_profiles, transport_modes=transport_modes, today_date=today_date, suggested_invoice_number=suggestion)
 
 @app.route('/generate_invoice', methods=['POST'])
@@ -214,19 +114,24 @@ def generate_invoice():
             return redirect(url_for('index'))
 
         # Generate Excel
-        copy_excel_with_formatting(TEMPLATE_EXCEL_FILE, excel_destination_filepath, config_data)
+        try:
+            generate_excel_invoice(TEMPLATE_EXCEL_FILE, excel_destination_filepath, config_data)
+        except Exception as e:
+            flash(f"Error generating Excel file: {e}", "error")
+            return redirect(url_for('index'))
 
-        # PDF conversion attempt
+        # PDF Generation
         pdf_output_filename = f"{excel_filename_base}.pdf"
         pdf_destination_filepath = os.path.join(PDF_OUTPUT_DIR, pdf_output_filename)
-        if WIN32COM_AVAILABLE and convert_excel_to_pdf(excel_destination_filepath, pdf_destination_filepath):
-            flash(f"Invoice {excel_output_filename} generated and PDF {pdf_output_filename} created successfully!", "success")
-            return redirect(url_for('success_pdf', filename=pdf_output_filename))
-        elif WIN32COM_AVAILABLE:
-            flash(f"Invoice {excel_output_filename} generated, but PDF conversion failed. You can download the Excel file.", "warning")
-            return redirect(url_for('success', filename=excel_output_filename))
-        else:
-            flash(f"Invoice {excel_output_filename} generated. PDF conversion skipped (pywin32 not available).", "info")
+        try:
+            generate_pdf_invoice(config_data, pdf_destination_filepath)
+            update_last_invoice_number(invoice_number_for_filename) # Update counter
+            flash(f"Invoice {excel_output_filename} and PDF {pdf_output_filename} created successfully!", "success")
+            # Redirect to a page that offers both downloads, or just the PDF
+            return redirect(url_for('success_pdf', filename=pdf_output_filename, excel_filename=excel_output_filename))
+        except Exception as e:
+            print(f"Error generating PDF: {e}")
+            flash(f"Invoice {excel_output_filename} generated, but PDF creation failed: {e}", "warning")
             return redirect(url_for('success', filename=excel_output_filename))
 
     except Exception as e:
@@ -247,12 +152,11 @@ def calculate_preview_route():
         item_amount = quantity * rate
         subtotal = float(item_amount)
         igst_amount = 0; cgst_amount = 0; sgst_amount = 0
-        igst_rate_val = 0.12; cgst_rate_val = 0.06; sgst_rate_val = 0.06
         if tax_type == "IGST":
-            igst_amount = subtotal * igst_rate_val
+            igst_amount = subtotal * TAX_RATES['IGST']
         elif tax_type == "CGST_SGST":
-            cgst_amount = subtotal * cgst_rate_val
-            sgst_amount = subtotal * sgst_rate_val
+            cgst_amount = subtotal * TAX_RATES['CGST']
+            sgst_amount = subtotal * TAX_RATES['SGST']
         total_before_round_off = float(subtotal) + float(igst_amount) + float(cgst_amount) + float(sgst_amount)
         rounded_total = round(total_before_round_off)
         round_off_value = rounded_total - total_before_round_off
@@ -344,8 +248,12 @@ def success():
 
 @app.route('/success_pdf')
 def success_pdf():
-    filename = request.args.get('filename')
-    return render_template('success.html', filename=filename, download_path=f'/generated_invoices_pdf/{filename}', is_pdf=True)
+    pdf_filename = request.args.get('filename')
+    excel_filename = request.args.get('excel_filename')
+    return render_template('success.html',
+                           pdf_filename=pdf_filename,
+                           excel_filename=excel_filename,
+                           is_pdf=True)
 
 @app.route('/generated_invoices/<filename>')
 def download_file(filename):
@@ -357,7 +265,7 @@ def download_pdf_file(filename):
 
 @app.route('/api/next_invoice_number')
 def api_next_invoice_number():
-    return jsonify({"next_invoice_number": suggest_next_invoice_number()})
+    return jsonify({"next_invoice_number": get_next_invoice_number()})
 
 if __name__ == '__main__':
     if not TEMPLATE_EXCEL_FILE:

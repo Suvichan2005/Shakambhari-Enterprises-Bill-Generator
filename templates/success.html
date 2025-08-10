@@ -27,8 +27,20 @@
 <body>
     <div class="container">
         <h1>Invoice Generated Successfully!</h1>
-        <p>Your invoice <strong>{{ filename }}</strong> has been created.</p>
-        <a href="{{ download_path }}" download>Download PDF</a>
+
+        {% if pdf_filename %}
+            <p>Your invoice <strong>{{ pdf_filename }}</strong> has been created.</p>
+            <a href="{{ url_for('download_pdf_file', filename=pdf_filename) }}" download>Download PDF</a>
+        {% endif %}
+
+        {% if excel_filename %}
+            <p>Your invoice <strong>{{ excel_filename }}</strong> has been created.</p>
+            <a href="{{ url_for('download_file', filename=excel_filename) }}" download>Download Excel</a>
+        {% elif filename and not pdf_filename %}
+            <p>Your invoice <strong>{{ filename }}</strong> has been created.</p>
+            <a href="{{ url_for('download_file', filename=filename) }}" download>Download Excel</a>
+        {% endif %}
+
         <a href="{{ url_for('index') }}" class="home-link">Create Another Invoice</a>
     </div>
 </body>

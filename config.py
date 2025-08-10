@@ -62,6 +62,14 @@ def ensure_dirs():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     os.makedirs(PDF_OUTPUT_DIR, exist_ok=True)
 
+# Tax Rates
+# Using a dictionary for clarity and extensibility
+TAX_RATES = {
+    'IGST': 0.12,
+    'CGST': 0.06,
+    'SGST': 0.06,
+}
+
 __all__ = [
     "BASE_DIR",
     "BUYER_PROFILES_JSON",
@@ -71,4 +79,5 @@ __all__ = [
     "TEMPLATE_DIR",
     "TEMPLATE_EXCEL_FILE",
     "ensure_dirs",
+    "TAX_RATES",
 ]
