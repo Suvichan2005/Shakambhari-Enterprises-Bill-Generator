@@ -151,7 +151,6 @@ def generate_invoice():
         buyer_profile_id = request.form['buyer_profile_id']
         raw_invoice_number_form = request.form['invoice_number']
         invoice_date_from_form_str = request.form['invoice_date']
-
         # Parse date
         try:
             dt_object = datetime.strptime(invoice_date_from_form_str, '%Y-%m-%d')
@@ -172,10 +171,17 @@ def generate_invoice():
 
         # Item
         item_description_bags = request.form.get('item_description_bags')
-        excel_item_base_description = request.form.get('item_base_description') or '1. Aluminium Utensils'
+        excel_item_base_description = (request.form.get('item_base_description') or '1. Aluminium Utensils').strip()
+        # Compose description with optional bags suffix
         item_description = excel_item_base_description
         if item_description_bags:
-            item_description += f" ({item_description_bags} Bags)"
+            try:
+                bags_int = int(float(item_description_bags))
+                if bags_int > 0:
+                    item_description += f" ({bags_int} Bags)"
+            except ValueError:
+                # If non-numeric, append raw
+                item_description += f" ({item_description_bags} Bags)"
         quantity = float(request.form.get('quantity', 0) or 0)
         rate = float(request.form.get('rate', 0) or 0)
 
@@ -247,7 +253,8 @@ def calculate_preview_route():
         item_amount = quantity * rate
         subtotal = float(item_amount)
         igst_amount = 0; cgst_amount = 0; sgst_amount = 0
-        igst_rate_val = 0.12; cgst_rate_val = 0.06; sgst_rate_val = 0.06
+        # Rates: IGST 5%, CGST 2.5%, SGST 2.5%
+        igst_rate_val = 0.05; cgst_rate_val = 0.025; sgst_rate_val = 0.025
         if tax_type == "IGST":
             igst_amount = subtotal * igst_rate_val
         elif tax_type == "CGST_SGST":

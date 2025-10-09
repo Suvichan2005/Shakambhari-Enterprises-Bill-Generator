@@ -174,20 +174,20 @@
             </tr>
             {% if tax_type == "IGST" and igst_amount is not none and igst_amount > 0 %}
             <tr class="total">
-                <td colspan="3" class="text-right">IGST (12%):</td>
+                <td colspan="3" class="text-right">IGST (5%):</td>
                 <td class="text-right">{{ "%.2f"|format(igst_amount) }}</td>
             </tr>
             {% endif %}
             {% if tax_type == "CGST_SGST" %}
             {% if cgst_amount is not none and cgst_amount > 0 %}
             <tr class="total">
-                <td colspan="3" class="text-right">CGST (6%):</td>
+                <td colspan="3" class="text-right">CGST (2.5%):</td>
                 <td class="text-right">{{ "%.2f"|format(cgst_amount) }}</td>
             </tr>
             {% endif %}
             {% if sgst_amount is not none and sgst_amount > 0 %}
             <tr class="total">
-                <td colspan="3" class="text-right">SGST (6%):</td>
+                <td colspan="3" class="text-right">SGST (2.5%):</td>
                 <td class="text-right">{{ "%.2f"|format(sgst_amount) }}</td>
             </tr>
             {% endif %}
