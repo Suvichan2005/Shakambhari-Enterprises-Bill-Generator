@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invoice Generated - Shakambhari</title>
+    <style>
+        :root {
+            --primary: #007bff;
+            --primary-dark: #0056b3;
+            --success: #28a745;
+            --success-dark: #218838;
+            --warning: #ffc107;
+            --gray-100: #f8f9fa;
+            --gray-200: #e9ecef;
+            --gray-700: #495057;
+            --gray-900: #212529;
+        }
+        
+        * { box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            margin: 0;
+            padding: 40px 20px;
+            background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            padding: 40px;
+            max-width: 550px;
+            text-align: center;
+        }
+        
+        .success-icon {
+            width: 80px;
+            height: 80px;
+            background: var(--success);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 20px;
+            animation: scaleIn 0.5s ease-out;
+        }
+        
+        @keyframes scaleIn {
+            from {
+                transform: scale(0);
+                opacity: 0;
+            }
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+        
+        .success-icon svg {
+            width: 40px;
+            height: 40px;
+            fill: white;
+        }
+        
+        h1 {
+            color: var(--success);
+            margin: 0 0 10px;
+            font-size: 1.8rem;
+        }
+        
+        .filename {
+            background: var(--gray-100);
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 0.9rem;
+            word-break: break-all;
+            margin: 20px 0;
+            color: var(--gray-700);
+        }
+        
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 12px 20px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.95rem;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+            margin: 4px;
+        }
+        
+        .btn-success {
+            background-color: var(--success);
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background-color: var(--success-dark);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+        }
+        
+        .btn-primary {
+            background-color: var(--primary);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background-color: var(--primary-dark);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 123, 255, 0.3);
+        }
+        
+        .btn-warning {
+            background-color: var(--warning);
+            color: var(--gray-900);
+        }
+        
+        .btn-warning:hover {
+            background-color: #e0a800;
+            transform: translateY(-2px);
+        }
+        
+        .btn-secondary {
+            background-color: var(--gray-200);
+            color: var(--gray-700);
+        }
+        
+        .btn-secondary:hover {
+            background-color: var(--gray-100);
+        }
+        
+        .btn-excel {
+            background-color: #1d6f42;
+            color: white;
+        }
+        
+        .btn-excel:hover {
+            background-color: #155a34;
+            transform: translateY(-2px);
+        }
+        
+        .btn-pdf {
+            background-color: #dc3545;
+            color: white;
+        }
+        
+        .btn-pdf:hover {
+            background-color: #c82333;
+            transform: translateY(-2px);
+        }
+        
+        .actions {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 25px;
+        }
+        
+        .download-row {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        
+        .actions-row {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 5px;
+        }
+        
+        .file-type {
+            font-size: 0.85rem;
+            color: var(--gray-700);
+            margin-bottom: 5px;
+        }
+        
+        .file-type .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 0.75rem;
+        }
+        
+        .badge-pdf {
+            background: #ffebee;
+            color: #c62828;
+        }
+        
+        .badge-excel {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        
+        .divider {
+            height: 1px;
+            background: var(--gray-200);
+            margin: 15px 0;
+        }
+        
+        .section-title {
+            font-size: 0.8rem;
+            color: var(--gray-700);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="success-icon">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+            </svg>
+        </div>
+        
+        <h1>Invoice Generated!</h1>
+        
+        <p class="file-type">
+            {% if is_pdf %}
+                <span class="badge badge-pdf">PDF</span> + <span class="badge badge-excel">Excel</span>
+            {% else %}
+                <span class="badge badge-excel">Excel</span>
+            {% endif %}
+            Your invoice is ready
+        </p>
+        
+        <div class="filename">{{ filename }}</div>
+        
+        <div class="actions">
+            <div class="section-title">📥 Download Files</div>
+            <div class="download-row">
+                {% if is_pdf %}
+                <a href="{{ download_path }}" class="btn btn-pdf" download>
+                    📄 Download PDF
+                </a>
+                <a href="/generated_invoices/{{ filename.replace('.pdf', '.xlsx') }}" class="btn btn-excel" download>
+                    📊 Download Excel
+                </a>
+                {% else %}
+                <a href="{{ download_path }}" class="btn btn-excel" download>
+                    📊 Download Excel
+                </a>
+                {% endif %}
+            </div>
+            
+            <div class="divider"></div>
+            
+            <div class="section-title">🔧 Actions</div>
+            <div class="actions-row">
+                <a href="{{ url_for('index') }}?load={{ filename.replace('.pdf', '.xlsx') }}" class="btn btn-warning">
+                    ✏️ Modify This Invoice
+                </a>
+                <a href="{{ url_for('index') }}" class="btn btn-primary">
+                    ➕ Create New Invoice
+                </a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
