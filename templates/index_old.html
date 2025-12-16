@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invoice Generator</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; background-color: #f9f9f9; color: #333; }
+        .container { background-color: #fff; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 800px; margin: 20px auto; }
+    h1, h2 { color: #333; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        h1 { text-align: center; }
+        label { display: block; margin-top: 15px; margin-bottom: 5px; font-weight: bold; }
+        input[type="text"], input[type="number"], input[type="date"], select, textarea {
+            width: calc(100% - 22px); /* Full width minus padding and border */
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box; /* Important for width calculation */
+        }
+        textarea { min-height: 80px; }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        button:hover { background-color: #0056b3; }
+        .error { color: red; margin-bottom: 15px; padding: 10px; background-color: #ffebeb; border: 1px solid red; border-radius: 4px;}
+        .form-section { margin-bottom: 20px; padding: 15px; background-color: #fdfdfd; border: 1px solid #eee; border-radius: 5px;}
+        .profile-actions { margin-top: 20px; margin-bottom: 20px;}
+        .profile-actions a {
+            text-decoration: none;
+            padding: 10px 15px;
+            background-color: #28a745; /* Green for add */
+            color: white;
+            border-radius: 4px;
+            margin-right: 10px;
+        }
+        .profile-actions a:hover { background-color: #218838; }
+        .profile-list-item { display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px solid #eee;}
+        .profile-list-item:last-child { border-bottom: none; }
+        .profile-list-item .edit-link {
+            text-decoration: none;
+            padding: 5px 10px;
+            background-color: #ffc107; /* Yellow for edit */
+            color: #333;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+        .profile-list-item .edit-link:hover { background-color: #e0a800; }
+        .flash-messages { list-style: none; padding: 0; margin-bottom: 15px; }
+        .flash-messages li { padding: 10px; margin-bottom: 10px; border-radius: 4px; }
+        .flash-messages .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .flash-messages .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+    /* Dropdown styling */
+    .dropdown-list { font-size: 0.9rem; }
+    .dropdown-list .buyer-row:hover, .dropdown-list .transport-row:hover { background:#eef5ff; }
+    .dropdown-list .selected-row { background:#dbe9ff; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Invoice Generator</h1>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <ul class="flash-messages">
+                {% for category, message in messages %}
+                    <li class="{{ category }}">{{ message }}</li>
+                {% endfor %}
+                </ul>
+            {% endif %}
+        {% endwith %}
+
+        {% if error %}
+            <p class="error">Error: {{ error }}</p>
+        {% endif %}
+
+        <div class="profile-actions">
+            <a href="{{ url_for('list_profiles') }}">Manage Buyer Profiles</a>
+        </div>
+
+        <div style="display: flex; gap: 20px;">
+            <form action="{{ url_for('generate_invoice') }}" method="POST" style="flex: 1;">
+                <div class="form-section">
+                    <h2>Buyer and Invoice Details</h2>
+                    <label for="buyer_profile_search">Buyer Profile:</label>
+                    <input type="text" id="buyer_profile_search" placeholder="Search buyer..." autocomplete="off">
+                    <div id="buyer_profile_results" class="dropdown-list" style="max-height:150px; overflow:auto; border:1px solid #ccc; border-radius:4px; display:none; background:#fff; position:relative; z-index:10;"></div>
+                    <input type="hidden" id="buyer_profile_id" name="buyer_profile_id" required>
+                    <small id="buyer_selected_display" style="display:block; margin-top:4px; color:#555;"></small>
+
+                    <label for="invoice_number">Invoice Number:</label>
+                    <input type="text" name="invoice_number" id="invoice_number" required value="{{ suggested_invoice_number }}">
+
+                    <label for="invoice_date">Invoice Date:</label>
+                    <input type="date" name="invoice_date" id="invoice_date" value="{{ today_date }}" required>
+                </div>
+
+                <div class="form-section">
+                    <h2>Transport Details</h2>
+                    <label for="transport_mode_search">Transport Mode:</label>
+                    <input type="text" id="transport_mode_search" placeholder="Type or search (don't include prefix)" autocomplete="off">
+                    <div id="transport_mode_results" class="dropdown-list" style="max-height:120px; overflow:auto; border:1px solid #ccc; border-radius:4px; display:none; background:#fff; position:relative; z-index:10;"></div>
+                    <input type="hidden" id="transport_mode" name="transport_mode">
+                    <small style="display:block; margin-top:4px; color:#555;">Will be saved as: <span id="transport_mode_canonical_preview"></span></small>
+                </div>
+                
+                <div class="form-section">
+                    <h2>Item Details</h2>
+                    <p class="info-text">Currently supports one item per invoice.</p>
+                    <label for="item_description_bags">Number of Bags (for description):</label>
+                    <input type="number" name="item_description_bags" id="item_description_bags" step="1" placeholder="e.g., 6">
+                    
+                    <label for="item_base_description">Base Item Description (Optional):</label>
+                    <input type="text" name="item_base_description" id="item_base_description" value="1. Aluminium Utensils" placeholder="e.g., Aluminium Utensils">
+
+                    <label for="quantity">Quantity (e.g., 287.100):</label>
+                    <input type="number" name="quantity" id="quantity" step="any" required>
+
+                    <label for="rate">Rate (e.g., 270.00):</label>
+                    <input type="number" name="rate" id="rate" step="any" required>
+                </div>
+
+                <div class="form-section">
+                    <h2>Tax Type Override (for Preview & Invoice)</h2>
+                    <p style="font-size: 0.9em; color: #555;">Select to override the buyer's default tax type. This will affect the current preview and the generated invoice.</p>
+                    <div style="display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
+                        <label style="display: flex; align-items: center; gap: 5px; cursor:pointer;">
+                            <input type="radio" name="tax_type_override" value="PROFILE_DEFAULT" checked disabled> Use Profile Default (<span id="profile_default_tax_type_indicator">IGST</span>)
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 5px; cursor:pointer;">
+                            <input type="radio" name="tax_type_override" value="IGST"> IGST
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 5px; cursor:pointer;">
+                            <input type="radio" name="tax_type_override" value="CGST_SGST"> CGST/SGST
+                        </label>
+                    </div>
+                </div>
+
+                <button type="submit">Generate Invoice</button>
+            </form>
+
+            <div class="form-section" id="invoice-preview-area" style="flex: 1; border-left: 2px solid #007bff; padding-left: 20px;">
+                <h2>Live Preview</h2>
+                <p><strong>Invoice Number:</strong> <span id="preview_invoice_number"></span></p>
+                <p><strong>Invoice Date:</strong> <span id="preview_invoice_date"></span></p>
+                
+                <h4>Buyer:</h4>
+                <p><strong id="preview_buyer_name"></strong></p>
+                <div id="preview_buyer_details"></div>
+                
+                <p><strong>Mode of Transport:</strong> <span id="preview_mode_of_transport"></span></p>
+                <h4>Item:</h4>
+                <p><strong>Description:</strong> <span id="preview_item_description"></span></p>
+                <p><strong>Quantity:</strong> <span id="preview_quantity"></span></p>
+                <p><strong>Rate:</strong> <span id="preview_rate"></span></p>
+                <!-- Calculated fields will be populated here -->
+                <p><strong>Item Amount:</strong> <span id="preview_item_amount">0.00</span></p>
+                <p><strong>Subtotal:</strong> <span id="preview_subtotal">0.00</span></p>
+                <p><strong>IGST (5%):</strong> <span id="preview_igst_amount">0.00</span></p>
+                <p><strong>CGST (2.5%):</strong> <span id="preview_cgst_amount">0.00</span></p>
+                <p><strong>SGST (2.5%):</strong> <span id="preview_sgst_amount">0.00</span></p>
+                <p><strong>Round Off:</strong> <span id="preview_round_off">0.00</span></p>
+                <p><strong>TOTAL:</strong> <strong id="preview_total_amount">0.00</strong></p>
+                <p><strong>Amount in Words:</strong> <span id="preview_amount_in_words">Zero Only</span></p>
+                
+                <p><strong>Tax Type (for calculation):</strong> <span id="preview_tax_type_calc"></span></p>
+            </div> <!-- end preview section -->
+        </div> <!-- end flex wrapper -->
+    </div> <!-- Closing container -->
+
+    <script>
+    // Data from server
+    const buyerProfiles = JSON.parse('{{ buyer_profiles|tojson|safe }}');
+    const transportModesRaw = JSON.parse('{{ transport_modes|tojson|safe }}');
+
+        function canonicalizeTransport(mode) {
+            if(!mode) return '';
+            let low = mode.toLowerCase();
+            const prefixes = ['mode of transport:', 'mode of transports:', 'mode of transport', 'mode of transports'];
+            for (const p of prefixes) {
+                if (low.startsWith(p)) {
+                    mode = mode.slice(p.length).trim().replace(/^[-: ]+/, '');
+                    break;
+                }
+            }
+            return mode.trim();
+        }
+
+        const transportModes = Array.from(new Set(transportModesRaw.map(canonicalizeTransport))).filter(x=>x);
+        const defaultItemBaseDescriptionFromHTML = document.getElementById('item_base_description').value; 
+        // defaultItemPrefix should be what you expect, e.g., "1. " or an empty string if no auto-prefix
+        const defaultItemPrefix = defaultItemBaseDescriptionFromHTML.startsWith("1. ") ? "1. " : "";
+        const actualDefaultItemBase = defaultItemBaseDescriptionFromHTML.replace(defaultItemPrefix, '');
+
+    async function updatePreview() {
+            // Invoice Number & Date
+            const rawInvoiceNumber = document.getElementById('invoice_number').value;
+            const rawInvoiceDate = document.getElementById('invoice_date').value; // This is YYYY-MM-DD
+            document.getElementById('preview_invoice_number').textContent = rawInvoiceNumber ? ("INVOICE No. " + rawInvoiceNumber) : "";
+            
+            // Format date as DD-MM-YYYY for preview
+            let formattedDateForPreview = "";
+            if (rawInvoiceDate) { // rawInvoiceDate is in YYYY-MM-DD format from <input type="date">
+                try {
+                    const [yyyy, mm, dd] = rawInvoiceDate.split("-");
+                    if (dd && mm && yyyy) { // Basic check
+                        formattedDateForPreview = `Date : ${dd}/${mm}/${yyyy}`;
+                    } else {
+                        formattedDateForPreview = "Date : Invalid date"; // Handle potential split issue
+                    }
+                } catch (e) {
+                    console.error("Error formatting date for preview:", e);
+                    formattedDateForPreview = "Date : Error";
+                }
+            }
+            document.getElementById('preview_invoice_date').textContent = formattedDateForPreview;
+
+            // Buyer Details
+            const selectedProfileId = document.getElementById('buyer_profile_id').value;
+            const buyerNameEl = document.getElementById('preview_buyer_name');
+            const buyerDetailsEl = document.getElementById('preview_buyer_details');
+            buyerNameEl.textContent = 'N/A';
+            buyerDetailsEl.innerHTML = ''; // Clear previous details
+
+            let profileDefaultTaxType = 'IGST'; // Default for profile tax type
+
+            if (selectedProfileId) {
+                const profile = buyerProfiles.find(p => p.profile_id === selectedProfileId);
+                if (profile) {
+                    buyerNameEl.textContent = profile.buyer_name;
+                    if (profile.buyer_details && profile.buyer_details.length > 0) {
+                        profile.buyer_details.forEach(line => {
+                            const p = document.createElement('p');
+                            p.textContent = line;
+                            p.style.margin = '2px 0';
+                            buyerDetailsEl.appendChild(p);
+                        });
+                    } else {
+                        buyerDetailsEl.innerHTML = '<p style="margin:2px 0">No address details available.</p>';
+                    }
+                    if (profile.default_tax_type) {
+                        profileDefaultTaxType = profile.default_tax_type;
+                    }
+                }
+            }
+            document.getElementById('profile_default_tax_type_indicator').textContent = profileDefaultTaxType;
+
+
+            // Mode of Transport
+            const rawTransport = document.getElementById('transport_mode').value;
+            const canonicalTransport = rawTransport ? ('Mode of Transport: ' + canonicalizeTransport(rawTransport)) : '';
+            document.getElementById('preview_mode_of_transport').textContent = canonicalTransport;
+            document.getElementById('transport_mode_canonical_preview').textContent = canonicalTransport || '(none)';
+
+            // Item Details
+            let itemBaseInput = document.getElementById('item_base_description').value.trim();
+            let itemDescription = "";
+            if (itemBaseInput) {
+                itemDescription = itemBaseInput;
+            } else {
+                itemDescription = defaultItemPrefix + actualDefaultItemBase; // Use the initial value if field is cleared
+            }
+            
+            const itemBags = document.getElementById('item_description_bags').value.trim();
+            if (itemBags) {
+                itemDescription += ` (${itemBags} Bags)`;
+            }
+            document.getElementById('preview_item_description').textContent = itemDescription;
+            
+            const quantity = parseFloat(document.getElementById('quantity').value) || 0;
+            const rate = parseFloat(document.getElementById('rate').value) || 0;
+            document.getElementById('preview_quantity').textContent = quantity.toFixed(3); // Show quantity with precision
+            document.getElementById('preview_rate').textContent = rate.toFixed(2); // Show rate with precision
+
+            // Determine Tax Type for Calculation
+            // const taxTypeOverrideRadio = document.querySelector('input[name="tax_type_override"]:checked'); // Old line
+            const selectedTaxOverrideRadio = document.querySelector('input[name="tax_type_override"]:not([disabled]):checked');
+
+            let calcTaxTypeForAPI;
+            let taxTypeDisplayString;
+
+            if (selectedTaxOverrideRadio) {
+                calcTaxTypeForAPI = selectedTaxOverrideRadio.value;
+                taxTypeDisplayString = `${calcTaxTypeForAPI} (User Override)`;
+            } else {
+                // Use the profile's default tax type when no override explicitly chosen
+                calcTaxTypeForAPI = profileDefaultTaxType || 'IGST';
+                taxTypeDisplayString = `Using Profile Default: ${calcTaxTypeForAPI}`;
+            }
+            
+            document.getElementById('preview_tax_type_calc').textContent = taxTypeDisplayString;
+
+            // AJAX call to get calculated values
+            try {
+                const response = await fetch("{{ url_for('calculate_preview_route') }}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': '{{ csrf_token() if csrf_token else "" }}' // If you use CSRF protection
+                    },
+                    body: JSON.stringify({
+                        quantity: quantity,
+                        rate: rate,
+                        tax_type: calcTaxTypeForAPI
+                    }),
+                });
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({})) // Gracefully handle non-JSON error response
+                    console.error('Calculation error:', errorData.error || response.statusText);
+                    document.getElementById('preview_item_amount').textContent = 'Error';
+                    document.getElementById('preview_subtotal').textContent = 'Error';
+                    document.getElementById('preview_igst_amount').textContent = 'Error';
+                    document.getElementById('preview_cgst_amount').textContent = 'Error';
+                    document.getElementById('preview_sgst_amount').textContent = 'Error';
+                    document.getElementById('preview_round_off').textContent = 'Error';
+                    document.getElementById('preview_total_amount').textContent = 'Error';
+                    document.getElementById('preview_amount_in_words').textContent = 'Error calculating...';
+                    return;
+                }
+                const results = await response.json();
+                document.getElementById('preview_item_amount').textContent = results.item_amount || '0.00';
+                document.getElementById('preview_subtotal').textContent = results.subtotal || '0.00';
+                document.getElementById('preview_igst_amount').textContent = results.igst_amount || '0.00';
+                document.getElementById('preview_cgst_amount').textContent = results.cgst_amount || '0.00';
+                document.getElementById('preview_sgst_amount').textContent = results.sgst_amount || '0.00';
+                document.getElementById('preview_round_off').textContent = results.round_off_value || '0.00';
+                document.getElementById('preview_total_amount').textContent = results.rounded_total || '0.00';
+                document.getElementById('preview_amount_in_words').textContent = results.amount_in_words || 'Not available';
+
+            } catch (error) {
+                console.error('Failed to fetch calculation:', error);
+                document.getElementById('preview_item_amount').textContent = 'N/A';
+                document.getElementById('preview_subtotal').textContent = 'N/A';
+                document.getElementById('preview_igst_amount').textContent = 'N/A';
+                document.getElementById('preview_cgst_amount').textContent = 'N/A';
+                document.getElementById('preview_sgst_amount').textContent = 'N/A';
+                document.getElementById('preview_round_off').textContent = 'N/A';
+                document.getElementById('preview_total_amount').textContent = 'N/A';
+                document.getElementById('preview_amount_in_words').textContent = 'Calculation failed.';
+            }
+        }
+
+        // Attach event listeners to all relevant form fields
+        // Buyer search dropdown logic
+    const buyerSearchInput = document.getElementById('buyer_profile_search');
+    const buyerResults = document.getElementById('buyer_profile_results');
+    const buyerHidden = document.getElementById('buyer_profile_id');
+    const buyerSelectedDisplay = document.getElementById('buyer_selected_display');
+
+        function renderBuyerResults(filter='') {
+            const f = filter.toLowerCase();
+            const matches = buyerProfiles.filter(b => b.buyer_name.toLowerCase().includes(f) || (b.gstin||'').toLowerCase().includes(f));
+            if(!matches.length){
+                buyerResults.style.display = 'none';
+                buyerResults.innerHTML = '';
+                return;
+            }
+            buyerResults.innerHTML = matches.map(m => `<div class="buyer-row" data-id="${m.profile_id}" style="padding:6px; cursor:pointer; border-bottom:1px solid #eee;">${m.buyer_name} <small style='color:#666'>${m.gstin||''}</small></div>`).join('');
+            buyerResults.style.display = 'block';
+        }
+
+        buyerSearchInput.addEventListener('input', e => {
+            renderBuyerResults(e.target.value.trim());
+        });
+        buyerResults.addEventListener('click', e => {
+            const row = e.target.closest('.buyer-row');
+            if(!row) return;
+            const id = row.getAttribute('data-id');
+            const profile = buyerProfiles.find(p=>p.profile_id===id);
+            if(profile){
+                buyerHidden.value = profile.profile_id;
+                buyerSelectedDisplay.textContent = `Selected: ${profile.buyer_name}`;
+                buyerResults.style.display='none';
+                buyerSearchInput.value='';
+                updatePreview();
+            }
+        });
+
+        // Auto-select first profile if available (only if none selected yet)
+        if(!buyerHidden.value && buyerProfiles.length){
+            buyerHidden.value = buyerProfiles[0].profile_id;
+            buyerSelectedDisplay.textContent = `Selected: ${buyerProfiles[0].buyer_name}`;
+        }
+        // Show buyer list on focus
+        buyerSearchInput.addEventListener('focus', () => {
+            renderBuyerResults(buyerSearchInput.value.trim());
+        });
+
+        // Transport mode search
+    const transportSearch = document.getElementById('transport_mode_search');
+    const transportResults = document.getElementById('transport_mode_results');
+    const transportHidden = document.getElementById('transport_mode');
+
+        function renderTransport(filter=''){
+            const f = filter.toLowerCase();
+            const matches = transportModes.filter(m => m.toLowerCase().includes(f));
+            if(!matches.length){
+                transportResults.style.display='none';
+                transportResults.innerHTML='';
+                return;
+            }
+            transportResults.innerHTML = matches.map(m=>`<div class='transport-row' data-val='${m}' style='padding:5px; cursor:pointer; border-bottom:1px solid #eee;'>${m}</div>`).join('');
+            transportResults.style.display='block';
+        }
+    transportSearch.addEventListener('input', e => { renderTransport(e.target.value.trim()); });
+    transportSearch.addEventListener('focus', () => { renderTransport(transportSearch.value.trim()); });
+        transportResults.addEventListener('click', e => {
+            const row = e.target.closest('.transport-row');
+            if(!row) return;
+            transportHidden.value = row.getAttribute('data-val');
+            transportSearch.value='';
+            transportResults.style.display='none';
+            updatePreview();
+        });
+
+        // If we have at least one transport, pre-fill hidden field with first
+        if(!transportHidden.value && transportModes.length){
+            transportHidden.value = transportModes[0];
+        }
+        // Click outside to close dropdowns
+        document.addEventListener('click', (e) => {
+            if(!buyerSearchInput.contains(e.target) && !buyerResults.contains(e.target)){
+                buyerResults.style.display='none';
+            }
+            if(!transportSearch.contains(e.target) && !transportResults.contains(e.target)){
+                transportResults.style.display='none';
+            }
+        });
+        document.getElementById('invoice_number').addEventListener('input', updatePreview);
+        document.getElementById('invoice_date').addEventListener('change', updatePreview);
+    transportSearch.addEventListener('input', updatePreview);
+        document.getElementById('item_base_description').addEventListener('input', updatePreview);
+        document.getElementById('item_description_bags').addEventListener('input', updatePreview);
+        document.getElementById('quantity').addEventListener('input', updatePreview);
+        document.getElementById('rate').addEventListener('input', updatePreview);
+        document.querySelectorAll('input[name="tax_type_override"]').forEach(radio => {
+            radio.addEventListener('change', updatePreview);
+        });
+
+        // Initial call to populate preview if there are default values (e.g., date / suggested invoice number)
+    // Initial lists display (buyer list visible so user can click quickly)
+    renderBuyerResults('');
+    renderTransport('');
+    updatePreview();
+    </script>
+
+</body>
+</html>
