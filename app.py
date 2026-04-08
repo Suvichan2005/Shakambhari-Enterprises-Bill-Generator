@@ -13,11 +13,11 @@ A Flask-based invoice generation system for GST billing with features:
 import os
 import json
 import re
+from decimal import Decimal, ROUND_HALF_UP
 from flask import Flask, render_template, request, redirect, url_for, send_from_directory, flash, jsonify
 from datetime import datetime
 import uuid
 from num2words import num2words
-import pythoncom
 from typing import Any, List, Dict, Optional
 from copy1 import copy_excel_with_formatting
 from config import (
@@ -101,10 +101,42 @@ def _financial_year_suffix(today: datetime = None) -> str:
     return f"/{start}-{str(end)[-2:]}"
 
 
+def safe_float(value: Any, default: float = 0.0) -> float:
+    """Safely convert a value to float with a fallback."""
+    try:
+        if value is None or value == '':
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def round_half_up(value: float) -> int:
+    """Round to nearest integer with .5 always rounding up."""
+    return int(Decimal(str(value)).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+
+
+def unique_filename(directory: str, base_name: str, extension: str) -> str:
+    """Generate a unique filename in a directory to avoid accidental overwrite."""
+    candidate = f"{base_name}{extension}"
+    counter = 2
+    while os.path.exists(os.path.join(directory, candidate)):
+        candidate = f"{base_name}__{counter}{extension}"
+        counter += 1
+    return candidate
+
+
+def is_new_invoice_layout(sheet) -> bool:
+    """Detect if the sheet uses the new layout that includes delivery charge row."""
+    row_label = str(sheet['C30'].value or '').strip().lower()
+    return 'delivery' in row_label
+
+
 def next_invoice_number(existing_files: List[str]) -> str:
-    """Calculate the next invoice number based on existing files."""
+    """Calculate the next invoice number based on existing files of current FY only."""
     max_num = 0
-    pattern = re.compile(r"Invoice_(\d+)_")
+    fy_token = _financial_year_suffix().lstrip('/').replace('-', '_')
+    pattern = re.compile(rf"^Invoice_(\d+)_{re.escape(fy_token)}(?:_|$)", re.IGNORECASE)
     for fname in existing_files:
         m = pattern.search(fname)
         if m:
@@ -183,6 +215,12 @@ def convert_excel_to_pdf(excel_filepath: str, pdf_filepath: str) -> bool:
         print(f"Skipping PDF conversion - pywin32 not available")
         return False
     
+    try:
+        import pythoncom
+    except Exception:
+        print("Skipping PDF conversion - pythoncom not available")
+        return False
+
     excel = None
     workbook = None
     pythoncom.CoInitialize()
@@ -221,8 +259,9 @@ def get_generated_invoices() -> List[Dict]:
     """Get list of all generated invoices with metadata."""
     invoices = []
     try:
-        files = os.listdir(OUTPUT_DIR)
-        for fname in sorted(files, reverse=True):
+        files = [f for f in os.listdir(OUTPUT_DIR) if f.endswith('.xlsx') and f.startswith('Invoice_')]
+        files.sort(key=lambda f: os.path.getmtime(os.path.join(OUTPUT_DIR, f)), reverse=True)
+        for fname in files:
             if fname.endswith('.xlsx') and fname.startswith('Invoice_'):
                 filepath = os.path.join(OUTPUT_DIR, fname)
                 try:
@@ -230,10 +269,21 @@ def get_generated_invoices() -> List[Dict]:
                     date_str = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M')
                     
                     # Parse invoice number and buyer from filename
-                    parts = fname.replace('.xlsx', '').split('_')
-                    invoice_num = parts[1] if len(parts) > 1 else ''
-                    buyer_name = ' '.join(parts[3:]) if len(parts) > 3 else ''
-                    buyer_name = buyer_name.replace('_', ' ')
+                    invoice_num = ''
+                    buyer_name = ''
+                    stem = fname.replace('.xlsx', '')
+                    m = re.match(r'^Invoice_(\d+)_((\d{4})_(\d{2}))_(.+?)(?:__\d+)?$', stem, re.IGNORECASE)
+                    if m:
+                        raw_num = m.group(1)
+                        year_start = m.group(3)
+                        year_end = m.group(4)
+                        buyer_name = m.group(5).replace('_', ' ')
+                        invoice_num = f"{int(raw_num):03d}/{year_start}-{year_end}"
+                    else:
+                        parts = stem.split('_')
+                        invoice_num = parts[1] if len(parts) > 1 else ''
+                        buyer_name = ' '.join(parts[2:]) if len(parts) > 2 else ''
+                        buyer_name = buyer_name.replace('_', ' ')
                     
                     invoice_info = {
                         'filename': fname,
@@ -252,9 +302,16 @@ def get_generated_invoices() -> List[Dict]:
                         try:
                             wb = openpyxl.load_workbook(filepath, data_only=True)
                             sheet = wb.active
+                            new_layout = is_new_invoice_layout(sheet)
                             
-                            # Get total amount (cell I33)
-                            total = sheet['I33'].value
+                            # Read final total from the active layout.
+                            total_candidates = ['I36', 'I35', 'I34'] if new_layout else ['I35', 'I34', 'I33']
+                            total = None
+                            for total_cell in total_candidates:
+                                cell_val = sheet[total_cell].value
+                                if isinstance(cell_val, (int, float)):
+                                    total = cell_val
+                                    break
                             if isinstance(total, (int, float)):
                                 invoice_info['total_amount'] = f"{total:,.2f}"
                             
@@ -268,11 +325,22 @@ def get_generated_invoices() -> List[Dict]:
                             invoice_info['items_count'] = items_count
                             
                             # Get tax type
-                            cgst_val = sheet['I31'].value or 0
-                            if isinstance(cgst_val, (int, float)) and cgst_val > 0:
-                                invoice_info['tax_type'] = 'CGST+SGST'
+                            if new_layout:
+                                rate31 = str(sheet['E31'].value or '').strip()
+                                rate32 = str(sheet['E32'].value or '').strip()
+                                val31 = safe_float(sheet['I31'].value, 0.0)
+                                val32 = safe_float(sheet['I32'].value, 0.0)
+                                if rate31.startswith('2.50') or rate32.startswith('2.50') or (val31 > 0 and not rate31.startswith('5.00')):
+                                    invoice_info['tax_type'] = 'CGST+SGST'
+                                else:
+                                    invoice_info['tax_type'] = 'IGST'
                             else:
-                                invoice_info['tax_type'] = 'IGST'
+                                cgst_val = safe_float(sheet['I31'].value, 0.0)
+                                cgst_rate = str(sheet['E31'].value or '').strip()
+                                if cgst_val > 0 or cgst_rate.startswith('2.50'):
+                                    invoice_info['tax_type'] = 'CGST+SGST'
+                                else:
+                                    invoice_info['tax_type'] = 'IGST'
                             
                             # Get transport mode
                             transport = sheet['E10'].value or ''
@@ -332,6 +400,12 @@ def extract_invoice_data(filepath: str) -> Optional[Dict]:
         # Extract transport mode
         transport_mode = str(sheet['E10'].value or '').strip()
         transport_core = extract_transport_core(transport_mode)
+
+        # Detect sheet layout for totals/tax fields.
+        new_layout = is_new_invoice_layout(sheet)
+        delivery_charge = 0.0
+        if new_layout:
+            delivery_charge = safe_float(sheet['I30'].value, 0.0)
         
         # Extract items
         items = []
@@ -351,9 +425,6 @@ def extract_invoice_data(filepath: str) -> Optional[Dict]:
                     bags = bags_match.group(1)
                     base_description = re.sub(r'\s*\(\d+\s*Bags?\)', '', desc_str, flags=re.IGNORECASE).strip()
                 
-                # Remove item number prefix if present
-                base_description = re.sub(r'^\d+\.\s*', '', base_description)
-                
                 items.append({
                     'description': base_description,
                     'bags': bags,
@@ -364,11 +435,22 @@ def extract_invoice_data(filepath: str) -> Optional[Dict]:
         # Detect tax type
         tax_type = 'IGST'
         try:
-            igst_val = sheet['I30'].value or 0
-            cgst_val = sheet['I31'].value or 0
-            
-            if isinstance(cgst_val, (int, float)) and cgst_val > 0:
-                tax_type = 'CGST_SGST'
+            if new_layout:
+                igst_val = safe_float(sheet['I31'].value, 0.0)
+                cgst_rate_31 = str(sheet['E31'].value or '').strip()
+                cgst_rate_32 = str(sheet['E32'].value or '').strip()
+                cgst_val_31 = safe_float(sheet['I31'].value, 0.0)
+                cgst_val_32 = safe_float(sheet['I32'].value, 0.0)
+                if cgst_rate_31.startswith('2.50') or cgst_rate_32.startswith('2.50') or (cgst_val_31 > 0 and not cgst_rate_31.startswith('5.00')) or cgst_val_32 > 0:
+                    tax_type = 'CGST_SGST'
+                else:
+                    tax_type = 'IGST'
+            else:
+                igst_val = safe_float(sheet['I30'].value, 0.0)
+                cgst_val = safe_float(sheet['I31'].value, 0.0)
+                cgst_rate = str(sheet['E31'].value or '').strip()
+                if cgst_val > 0 or cgst_rate.startswith('2.50'):
+                    tax_type = 'CGST_SGST'
         except:
             pass
         
@@ -379,6 +461,7 @@ def extract_invoice_data(filepath: str) -> Optional[Dict]:
             'invoice_date': invoice_date,
             'buyer_details': buyer_details,
             'transport_mode': transport_core,
+            'delivery_charge': delivery_charge,
             'items': items if items else [{'description': '', 'bags': '', 'quantity': 0, 'rate': 0}],
             'tax_type': tax_type
         }
@@ -465,6 +548,13 @@ def generate_invoice():
         # Transport mode - accept typed input and save if new
         transport_mode_input = request.form.get('transport_mode', '').strip()
         transport_mode = normalize_transport_mode(transport_mode_input)
+
+        # Delivery charge is invoice-level and taxable.
+        delivery_charge_raw = request.form.get('delivery_charge', '0').strip()
+        delivery_charge = safe_float(delivery_charge_raw, 0.0)
+        if delivery_charge < 0:
+            flash("Delivery charge cannot be negative.", "error")
+            return redirect(url_for('index'))
         
         if transport_mode_input:
             save_new_transport_mode(transport_mode_input)
@@ -544,6 +634,7 @@ def generate_invoice():
             "mode_of_transport": transport_mode,
             "items": items,
             "item_details": items[0] if items else {"description": "", "quantity": 0, "rate": 0},
+            "delivery_charge": delivery_charge,
             "tax_type": final_tax_type,
             "invoice_number": excel_invoice_number_display,
             "invoice_date": excel_invoice_date_display
@@ -554,8 +645,11 @@ def generate_invoice():
         safe_buyer_name = ''.join(c if c.isalnum() else '_' for c in selected_profile.get('buyer_name', 'Unknown'))
         
         excel_filename_base = f"Invoice_{safe_invoice_number}_{safe_buyer_name}" if safe_invoice_number else f"Invoice_{safe_buyer_name}"
-        excel_output_filename = f"{excel_filename_base}.xlsx"
+        excel_output_filename = unique_filename(OUTPUT_DIR, excel_filename_base, '.xlsx')
         excel_destination_filepath = os.path.join(OUTPUT_DIR, excel_output_filename)
+
+        if excel_output_filename != f"{excel_filename_base}.xlsx":
+            flash(f"Same invoice number already existed. Saved as {excel_output_filename}.", "warning")
         
         if not TEMPLATE_EXCEL_FILE:
             flash("No Excel template found. Place a template .xlsx inside the 'GST Invoices' folder.", "error")
@@ -565,7 +659,8 @@ def generate_invoice():
         copy_excel_with_formatting(TEMPLATE_EXCEL_FILE, excel_destination_filepath, config_data)
         
         # PDF conversion
-        pdf_output_filename = f"{excel_filename_base}.pdf"
+        pdf_base_name = os.path.splitext(excel_output_filename)[0]
+        pdf_output_filename = unique_filename(PDF_OUTPUT_DIR, pdf_base_name, '.pdf')
         pdf_destination_filepath = os.path.join(PDF_OUTPUT_DIR, pdf_output_filename)
         
         if WIN32COM_AVAILABLE and convert_excel_to_pdf(excel_destination_filepath, pdf_destination_filepath):
@@ -598,6 +693,9 @@ def calculate_preview_route():
             items = [{'quantity': quantity, 'rate': rate}]
         
         tax_type = data.get('tax_type', 'IGST')
+        delivery_charge = safe_float(data.get('delivery_charge', 0), 0.0)
+        if delivery_charge < 0:
+            delivery_charge = 0.0
         
         # Calculate totals
         item_amounts = []
@@ -609,19 +707,21 @@ def calculate_preview_route():
             item_amounts.append(amount)
             subtotal += amount
         
+        taxable_amount = subtotal + delivery_charge
+
         # Tax calculations
         igst_amount = 0
         cgst_amount = 0
         sgst_amount = 0
         
         if tax_type == "IGST":
-            igst_amount = subtotal * 0.05
+            igst_amount = taxable_amount * 0.05
         elif tax_type == "CGST_SGST":
-            cgst_amount = subtotal * 0.025
-            sgst_amount = subtotal * 0.025
+            cgst_amount = taxable_amount * 0.025
+            sgst_amount = taxable_amount * 0.025
         
-        total_before_round = subtotal + igst_amount + cgst_amount + sgst_amount
-        rounded_total = round(total_before_round)
+        total_before_round = taxable_amount + igst_amount + cgst_amount + sgst_amount
+        rounded_total = round_half_up(total_before_round)
         round_off = rounded_total - total_before_round
         
         # Amount in words
@@ -635,6 +735,8 @@ def calculate_preview_route():
             "item_amounts": [f"{a:.2f}" for a in item_amounts],
             "item_amount": f"{item_amounts[0]:.2f}" if item_amounts else "0.00",
             "subtotal": f"{subtotal:.2f}",
+            "delivery_charge": f"{delivery_charge:.2f}",
+            "taxable_amount": f"{taxable_amount:.2f}",
             "igst_amount": f"{igst_amount:.2f}",
             "cgst_amount": f"{cgst_amount:.2f}",
             "sgst_amount": f"{sgst_amount:.2f}",

@@ -172,6 +172,12 @@
                 <td colspan="3" class="text-right">Subtotal:</td>
                 <td class="text-right">{{ "%.2f"|format(subtotal if subtotal else 0) }}</td>
             </tr>
+            {% if delivery_charge is not none and delivery_charge > 0 %}
+            <tr class="total">
+                <td colspan="3" class="text-right">Delivery Charge:</td>
+                <td class="text-right">{{ "%.2f"|format(delivery_charge) }}</td>
+            </tr>
+            {% endif %}
             {% if tax_type == "IGST" and igst_amount is not none and igst_amount > 0 %}
             <tr class="total">
                 <td colspan="3" class="text-right">IGST (5%):</td>

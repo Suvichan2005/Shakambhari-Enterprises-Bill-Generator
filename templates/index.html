@@ -851,6 +851,15 @@
                         </div>
                         <button type="button" class="btn-add-item" onclick="addItemRow()">➕ Add Another Item</button>
                     </div>
+
+                    <!-- Delivery Charge -->
+                    <div class="form-section">
+                        <h2>🚛 Delivery Charge</h2>
+                        <div class="form-group">
+                            <label for="delivery_charge">Delivery Charge:</label>
+                            <input type="number" name="delivery_charge" id="delivery_charge" value="0" min="0" step="any">
+                        </div>
+                    </div>
                     
                     <!-- Tax Type -->
                     <div class="form-section">
@@ -924,6 +933,10 @@
                         <tr>
                             <td>Subtotal:</td>
                             <td id="preview_subtotal">₹0.00</td>
+                        </tr>
+                        <tr id="row_delivery" style="display: none;">
+                            <td>Delivery Charge:</td>
+                            <td id="preview_delivery_charge">₹0.00</td>
                         </tr>
                         <tr id="row_igst">
                             <td>IGST (5%):</td>
@@ -1002,9 +1015,11 @@
         
         const transportInput = document.getElementById('transport_mode_input');
         const transportDropdown = document.getElementById('transport_dropdown');
+        const deliveryInput = document.getElementById('delivery_charge');
         
         const itemsContainer = document.getElementById('items_container');
         let itemCounter = 0;
+        let previewRequestSeq = 0;
         
         // ================= BUYER DROPDOWN =================
         function showBuyerDropdown(filter = '') {
@@ -1191,6 +1206,8 @@
         
         // ================= PREVIEW UPDATE =================
         async function updatePreview() {
+            const requestSeq = ++previewRequestSeq;
+
             // Invoice number and date
             const invoiceNum = document.getElementById('invoice_number').value;
             const invoiceDate = document.getElementById('invoice_date').value;
@@ -1225,6 +1242,7 @@
             // Items and calculations
             const items = getItems();
             const taxType = getSelectedTaxType();
+            const deliveryCharge = parseFloat(deliveryInput.value) || 0;
             
             // Update item amounts display
             const rows = itemsContainer.querySelectorAll('.item-row');
@@ -1256,13 +1274,19 @@
                 const response = await fetch('{{ url_for("calculate_preview_route") }}', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ items, tax_type: taxType })
+                    body: JSON.stringify({ items, tax_type: taxType, delivery_charge: deliveryCharge })
                 });
+
+                // Ignore stale responses from older requests.
+                if (requestSeq !== previewRequestSeq) {
+                    return;
+                }
                 
                 if (response.ok) {
                     const data = await response.json();
                     
                     document.getElementById('preview_subtotal').textContent = `₹${data.subtotal}`;
+                    document.getElementById('preview_delivery_charge').textContent = `₹${data.delivery_charge}`;
                     document.getElementById('preview_igst').textContent = `₹${data.igst_amount}`;
                     document.getElementById('preview_cgst').textContent = `₹${data.cgst_amount}`;
                     document.getElementById('preview_sgst').textContent = `₹${data.sgst_amount}`;
@@ -1272,9 +1296,15 @@
                     
                     // Show/hide tax rows based on type
                     const isIGST = taxType === 'IGST';
-                    document.getElementById('row_igst').style.display = isIGST ? '' : 'none';
-                    document.getElementById('row_cgst').style.display = isIGST ? 'none' : '';
-                    document.getElementById('row_sgst').style.display = isIGST ? 'none' : '';
+                    const deliveryVal = parseFloat(data.delivery_charge) || 0;
+                    const igstVal = parseFloat(data.igst_amount) || 0;
+                    const cgstVal = parseFloat(data.cgst_amount) || 0;
+                    const sgstVal = parseFloat(data.sgst_amount) || 0;
+
+                    document.getElementById('row_delivery').style.display = deliveryVal > 0 ? '' : 'none';
+                    document.getElementById('row_igst').style.display = (isIGST && igstVal > 0) ? '' : 'none';
+                    document.getElementById('row_cgst').style.display = (!isIGST && cgstVal > 0) ? '' : 'none';
+                    document.getElementById('row_sgst').style.display = (!isIGST && sgstVal > 0) ? '' : 'none';
                 }
             } catch (e) {
                 console.error('Preview calculation error:', e);
@@ -1284,6 +1314,7 @@
         // Event listeners for invoice info
         document.getElementById('invoice_number').addEventListener('input', updatePreview);
         document.getElementById('invoice_date').addEventListener('change', updatePreview);
+        deliveryInput.addEventListener('input', updatePreview);
         
         // ================= LOAD OLD INVOICE MODAL =================
         let invoiceListData = [...recentInvoices]; // Local copy for sorting
@@ -1421,6 +1452,7 @@
                 
                 // Set transport
                 transportInput.value = data.transport_mode || '';
+                deliveryInput.value = data.delivery_charge || 0;
                 
                 // Find and select buyer by matching details
                 const buyerDetails = data.buyer_details || [];
@@ -1493,6 +1525,7 @@
             
             // Reset transport
             transportInput.value = '';
+            deliveryInput.value = 0;
             
             // Reset buyer to first profile
             if (buyerProfiles.length > 0) {
@@ -1533,6 +1566,7 @@
             
             // Set transport
             transportInput.value = data.transport_mode || '';
+            deliveryInput.value = data.delivery_charge || 0;
             
             // Find and select buyer by matching GSTIN
             const buyerDetails = data.buyer_details || [];
