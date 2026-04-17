@@ -275,7 +275,7 @@
             font-size: 0.85rem;
             color: var(--primary-dark);
         }
-        
+
         /* Items table */
         .items-container {
             margin-top: 10px;
@@ -283,7 +283,7 @@
         
         .item-row {
             display: grid;
-            grid-template-columns: 2fr 80px 100px 100px 80px auto;
+            grid-template-columns: 175px 58px 100px 95px 80px 95px auto;
             gap: 10px;
             align-items: end;
             margin-bottom: 10px;
@@ -291,6 +291,11 @@
             background: white;
             border-radius: 6px;
             border: 1px solid var(--gray-300);
+        }
+
+        .item-row input[name="item_description[]"] {
+            font-size: 1rem;
+            font-weight: 500;
         }
         
         .item-row input {
@@ -336,6 +341,12 @@
         
         .btn-add-item:hover {
             background: var(--success-dark);
+        }
+
+        @media (max-width: 1200px) {
+            .item-row {
+                grid-template-columns: 1fr 1fr;
+            }
         }
         
         /* Tax radio buttons */
@@ -810,7 +821,7 @@
                         <h2>👤 Buyer Details</h2>
                         <div class="form-group dropdown-wrapper">
                             <label for="buyer_profile_search">Search Buyer:</label>
-                            <input type="text" id="buyer_profile_search" placeholder="Type to search buyers..." autocomplete="off">
+                            <input type="text" id="buyer_profile_search" placeholder="Type buyer name, GSTIN, or city..." autocomplete="off">
                             <div id="buyer_dropdown" class="dropdown-list"></div>
                             <input type="hidden" id="buyer_profile_id" name="buyer_profile_id" required>
                             <div id="buyer_selected_display" class="selected-display" style="display: none;"></div>
@@ -919,11 +930,12 @@
                                 <th>Description</th>
                                 <th>Qty</th>
                                 <th>Rate</th>
+                                <th>HSN</th>
                                 <th>Amount</th>
                             </tr>
                         </thead>
                         <tbody id="preview_items_body">
-                            <tr><td colspan="4">No items added</td></tr>
+                            <tr><td colspan="5">No items added</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1132,6 +1144,10 @@
                     <input type="number" name="item_bags[]" value="${data.bags || ''}" placeholder="Qty" oninput="updatePreview()">
                 </div>
                 <div>
+                    <label>HSN Code</label>
+                    <input type="text" name="item_hsn[]" value="${data.hsn || '76151030'}" placeholder="e.g. 76151030" oninput="updatePreview()">
+                </div>
+                <div>
                     <label>Quantity</label>
                     <input type="number" name="item_quantity[]" value="${data.quantity || ''}" step="any" required oninput="updatePreview()">
                 </div>
@@ -1170,6 +1186,7 @@
             rows.forEach(row => {
                 const desc = row.querySelector('input[name="item_description[]"]').value;
                 const bags = row.querySelector('input[name="item_bags[]"]').value;
+                const hsn = row.querySelector('input[name="item_hsn[]"]').value.trim();
                 const qty = parseFloat(row.querySelector('input[name="item_quantity[]"]').value) || 0;
                 const rate = parseFloat(row.querySelector('input[name="item_rate[]"]').value) || 0;
                 
@@ -1180,6 +1197,7 @@
                 
                 items.push({
                     description: fullDesc,
+                    hsn: hsn,
                     quantity: qty,
                     rate: rate
                 });
@@ -1256,7 +1274,7 @@
             // Preview items table
             const previewBody = document.getElementById('preview_items_body');
             if (items.length === 0 || items.every(i => !i.quantity && !i.rate)) {
-                previewBody.innerHTML = '<tr><td colspan="4">No items added</td></tr>';
+                previewBody.innerHTML = '<tr><td colspan="5">No items added</td></tr>';
             } else {
                 previewBody.innerHTML = items.map(item => {
                     const amount = item.quantity * item.rate;
@@ -1264,6 +1282,7 @@
                         <td>${item.description || '-'}</td>
                         <td>${item.quantity.toFixed(3)}</td>
                         <td>₹${item.rate.toFixed(2)}</td>
+                        <td>${item.hsn || '-'}</td>
                         <td>₹${amount.toFixed(2)}</td>
                     </tr>`;
                 }).join('');

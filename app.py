@@ -411,6 +411,9 @@ def extract_invoice_data(filepath: str) -> Optional[Dict]:
         items = []
         for row in range(18, 28):  # Check rows 18-27 for items
             description = sheet[f'A{row}'].value
+            hsn_value = sheet[f'H{row}'].value
+            if hsn_value in (None, ''):
+                hsn_value = sheet[f'B{row}'].value
             quantity = sheet[f'F{row}'].value
             rate = sheet[f'G{row}'].value
             
@@ -428,6 +431,7 @@ def extract_invoice_data(filepath: str) -> Optional[Dict]:
                 items.append({
                     'description': base_description,
                     'bags': bags,
+                    'hsn': str(hsn_value).strip() if hsn_value is not None else '',
                     'quantity': float(quantity) if quantity else 0,
                     'rate': float(rate) if rate else 0
                 })
@@ -563,6 +567,7 @@ def generate_invoice():
         items = []
         item_descriptions = request.form.getlist('item_description[]')
         item_bags = request.form.getlist('item_bags[]')
+        item_hsns = request.form.getlist('item_hsn[]')
         item_quantities = request.form.getlist('item_quantity[]')
         item_rates = request.form.getlist('item_rate[]')
         
@@ -570,6 +575,7 @@ def generate_invoice():
             for i in range(len(item_descriptions)):
                 desc = item_descriptions[i].strip() if i < len(item_descriptions) else ''
                 bags = item_bags[i].strip() if i < len(item_bags) else ''
+                hsn = item_hsns[i].strip() if i < len(item_hsns) else ''
                 qty = float(item_quantities[i]) if i < len(item_quantities) and item_quantities[i] else 0
                 rt = float(item_rates[i]) if i < len(item_rates) and item_rates[i] else 0
                 
@@ -585,6 +591,7 @@ def generate_invoice():
                     
                     items.append({
                         'description': full_desc,
+                        'hsn': hsn,
                         'quantity': qty,
                         'rate': rt
                     })
@@ -592,6 +599,7 @@ def generate_invoice():
             # Backward compatibility - single item
             base_desc = request.form.get('item_base_description', '1. Aluminium Utensils').strip()
             bags = request.form.get('item_description_bags', '').strip()
+            hsn = request.form.get('item_hsn', '').strip()
             quantity = float(request.form.get('quantity', 0) or 0)
             rate = float(request.form.get('rate', 0) or 0)
             
@@ -606,6 +614,7 @@ def generate_invoice():
             
             items.append({
                 'description': description,
+                'hsn': hsn,
                 'quantity': quantity,
                 'rate': rate
             })
