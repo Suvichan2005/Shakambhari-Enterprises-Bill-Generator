@@ -22,3 +22,21 @@ Generated_Invoices/
 Generated_Invoices_PDF/
 GST Invoices/
 copy1.py
+
+# Local/runtime noise
+logs/
+_backups/
+*.log
+
+# Python environments and cache
+.venv/
+venv/
+__pycache__/
+
+# Cloud credentials and local env files
+cloud/service-account.json
+cloud/*.key
+cloud/.env
+cloud/.env.*
+.env
+.env.*
