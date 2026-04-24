@@ -1,0 +1,27 @@
+runtime: python311
+instance_class: F2
+
+env_variables:
+  GOOGLE_CLOUD_PROJECT: "shakambhari-invoices"
+  GCS_BUCKET_NAME: "shakambhari-invoices-bucket"
+  SPREADSHEET_ID: "YOUR_GOOGLE_SPREADSHEET_ID_HERE"
+  FLASK_SECRET_KEY: "CHANGE_ME_TO_A_LONG_RANDOM_SECRET"
+  APP_PASSWORD: "CHANGE_ME_TO_A_STRONG_PASSWORD"
+  FLASK_ENV: "production"
+  SESSION_COOKIE_SECURE: "true"
+
+automatic_scaling:
+  min_instances: 0
+  max_instances: 2
+  target_cpu_utilization: 0.65
+
+entrypoint: gunicorn -b :$PORT -w 2 -t 120 app_cloud:app
+
+handlers:
+- url: /static
+  static_dir: static
+  secure: always
+
+- url: /.*
+  script: auto
+  secure: always

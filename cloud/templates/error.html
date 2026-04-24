@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ code }} - {{ title }}</title>
+    <style>
+        :root {
+            --primary: #007bff;
+            --primary-dark: #0056b3;
+            --danger: #dc3545;
+            --gray-100: #f8f9fa;
+            --gray-300: #dee2e6;
+            --gray-700: #495057;
+            --gray-900: #212529;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: linear-gradient(160deg, #f8f9fa 0%, #e9ecef 100%);
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            color: var(--gray-900);
+        }
+
+        .card {
+            width: 100%;
+            max-width: 560px;
+            background: #fff;
+            border-radius: 14px;
+            box-shadow: 0 10px 32px rgba(0, 0, 0, 0.12);
+            padding: 28px;
+            text-align: center;
+        }
+
+        .code {
+            font-size: 3rem;
+            font-weight: 700;
+            color: var(--danger);
+            margin: 0;
+        }
+
+        h1 {
+            margin: 8px 0 10px 0;
+            font-size: 1.4rem;
+        }
+
+        p {
+            margin: 0;
+            color: var(--gray-700);
+            line-height: 1.6;
+        }
+
+        .actions {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            border: none;
+            border-radius: 8px;
+            padding: 11px 15px;
+            text-decoration: none;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-block;
+        }
+
+        .btn-primary {
+            color: #fff;
+            background: var(--primary);
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+        }
+
+        .btn-secondary {
+            color: var(--gray-900);
+            background: var(--gray-300);
+        }
+
+        .btn-secondary:hover {
+            background: #cfd4da;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <p class="code">{{ code }}</p>
+        <h1>{{ title }}</h1>
+        <p>{{ message }}</p>
+        <div class="actions">
+            <a href="{{ url_for('index') }}" class="btn btn-primary">Go Home</a>
+            <button class="btn btn-secondary" type="button" onclick="window.history.back()">Go Back</button>
+        </div>
+    </div>
+</body>
+</html>

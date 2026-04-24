@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ 'Add New Buyer Profile' if is_new_profile else 'Edit Buyer Profile' }} - Shakambhari</title>
+    <style>
+        :root {
+            --primary: #007bff;
+            --primary-dark: #0056b3;
+            --success: #28a745;
+            --success-dark: #218838;
+            --warning: #ffc107;
+            --danger: #dc3545;
+            --gray-100: #f8f9fa;
+            --gray-200: #e9ecef;
+            --gray-300: #dee2e6;
+            --gray-500: #adb5bd;
+            --gray-700: #495057;
+            --gray-900: #212529;
+        }
+        
+        * { box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: var(--gray-100);
+            color: var(--gray-900);
+            line-height: 1.5;
+        }
+        
+        .container {
+            max-width: 700px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            text-align: center;
+            color: var(--gray-900);
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+        
+        .flash-messages {
+            list-style: none;
+            padding: 0;
+            margin: 0 0 20px 0;
+        }
+        
+        .flash-messages li {
+            padding: 12px 16px;
+            margin-bottom: 10px;
+            border-radius: 6px;
+            font-weight: 500;
+        }
+        
+        .flash-messages .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .flash-messages .success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            padding: 25px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: var(--gray-700);
+        }
+        
+        .required::after {
+            content: ' *';
+            color: var(--danger);
+        }
+        
+        input[type="text"],
+        textarea,
+        select {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1px solid var(--gray-300);
+            border-radius: 6px;
+            font-size: 1rem;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        
+        input:focus,
+        textarea:focus,
+        select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(0,123,255,0.15);
+        }
+        
+        textarea {
+            min-height: 150px;
+            resize: vertical;
+            font-family: inherit;
+        }
+        
+        .hint {
+            font-size: 0.8rem;
+            color: var(--gray-500);
+            margin-top: 5px;
+        }
+        
+        .tax-options {
+            display: flex;
+            gap: 15px;
+        }
+        
+        .tax-option {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            padding: 12px 20px;
+            border: 2px solid var(--gray-300);
+            border-radius: 8px;
+            transition: all 0.2s;
+            flex: 1;
+            justify-content: center;
+        }
+        
+        .tax-option:has(input:checked) {
+            border-color: var(--primary);
+            background: #e3f2fd;
+        }
+        
+        .tax-option input {
+            width: auto;
+            margin: 0;
+        }
+        
+        .tax-option span {
+            font-weight: 500;
+        }
+        
+        .form-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 25px;
+            padding-top: 20px;
+            border-top: 1px solid var(--gray-200);
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .btn-primary {
+            background-color: var(--primary);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background-color: var(--primary-dark);
+        }
+        
+        .btn-secondary {
+            background-color: var(--gray-200);
+            color: var(--gray-700);
+        }
+        
+        .btn-secondary:hover {
+            background-color: var(--gray-300);
+        }
+        
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            color: var(--primary);
+            text-decoration: none;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+        
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        
+        /* Preview section */
+        .preview-section {
+            margin-top: 25px;
+            padding: 20px;
+            background: var(--gray-100);
+            border-radius: 8px;
+        }
+        
+        .preview-section h3 {
+            margin-top: 0;
+            font-size: 0.9rem;
+            color: var(--gray-500);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .preview-content {
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+        
+        .preview-content .name {
+            font-weight: 600;
+            font-size: 1.1rem;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="{{ url_for('list_profiles') }}" class="back-link">← Back to Profiles</a>
+        
+        <h1>{{ '➕ Add New Buyer Profile' if is_new_profile else '✏️ Edit Buyer Profile' }}</h1>
+        
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <ul class="flash-messages">
+                {% for category, message in messages %}
+                    <li class="{{ category }}">{{ message }}</li>
+                {% endfor %}
+                </ul>
+            {% endif %}
+        {% endwith %}
+        
+        <div class="card">
+            <form method="POST" action="{{ url_for('manage_profile', profile_id=profile.profile_id if profile and profile.profile_id else None) }}">
+                
+                <div class="form-group">
+                    <label for="buyer_name" class="required">Buyer Name</label>
+                    <input type="text" id="buyer_name" name="buyer_name" 
+                           value="{{ profile.buyer_name if profile else '' }}" 
+                           placeholder="e.g., M/S ABC Traders"
+                           required
+                           oninput="updatePreview()">
+                </div>
+                
+                <div class="form-group">
+                    <label for="buyer_details_textarea">Buyer Details (Address)</label>
+                    <textarea id="buyer_details_textarea" name="buyer_details_textarea" 
+                              placeholder="Enter address details (do NOT repeat buyer name here):
+Street Address / Market Name
+Area / Locality
+City, STATE - PINCODE CODE-XX"
+                              oninput="updatePreview()">{{ profile.buyer_details_textarea if profile else '' }}</textarea>
+                    <p class="hint">
+                        Enter address lines only. The buyer name above will be shown automatically at the top of the invoice. GSTIN will be added from the field below.
+                        <button type="button" onclick="cleanupDetails()" style="margin-left: 10px; padding: 3px 8px; font-size: 0.75rem; cursor: pointer;">🧹 Clean Up</button>
+                    </p>
+                </div>
+                
+                <div class="form-group">
+                    <label for="gstin">GSTIN</label>
+                    <input type="text" id="gstin" name="gstin" 
+                           value="{{ profile.gstin if profile else '' }}"
+                           placeholder="e.g., 19AABCT1234Z1ZV"
+                           style="text-transform: uppercase;"
+                           maxlength="15"
+                           oninput="updatePreview()">
+                    <p class="hint">15-character GST Identification Number. Leave blank if unregistered.</p>
+                </div>
+                
+                <div class="form-group">
+                    <label>Default Tax Type</label>
+                    <div class="tax-options">
+                        <label class="tax-option">
+                            <input type="radio" name="default_tax_type" value="IGST" 
+                                   {{ 'checked' if not profile or profile.default_tax_type == 'IGST' else '' }}>
+                            <span>IGST (5%)</span>
+                        </label>
+                        <label class="tax-option">
+                            <input type="radio" name="default_tax_type" value="CGST_SGST"
+                                   {{ 'checked' if profile and profile.default_tax_type == 'CGST_SGST' else '' }}>
+                            <span>CGST/SGST (2.5% each)</span>
+                        </label>
+                    </div>
+                    <p class="hint">IGST for interstate sales, CGST/SGST for intrastate (within West Bengal).</p>
+                </div>
+                
+                <div class="preview-section">
+                    <h3>Preview (as it will appear on invoice)</h3>
+                    <div class="preview-content" id="addressPreview">
+                        <em>Start typing to see preview...</em>
+                    </div>
+                </div>
+                
+                <div class="form-actions">
+                    <a href="{{ url_for('list_profiles') }}" class="btn btn-secondary">Cancel</a>
+                    <button type="submit" class="btn btn-primary">
+                        {{ '✓ Create Profile' if is_new_profile else '💾 Save Changes' }}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <script>
+        function cleanupDetails() {
+            const name = document.getElementById('buyer_name').value.trim().toLowerCase();
+            const detailsEl = document.getElementById('buyer_details_textarea');
+            const gstinEl = document.getElementById('gstin');
+            
+            let details = detailsEl.value;
+            let lines = details.split('\n');
+            let cleanedLines = [];
+            let extractedGstin = '';
+            
+            lines.forEach(line => {
+                let trimmed = line.trim();
+                let lowerTrimmed = trimmed.toLowerCase();
+                
+                // Skip empty lines
+                if (!trimmed) return;
+                
+                // Skip "Buyer :" prefix lines
+                if (lowerTrimmed === 'buyer :' || lowerTrimmed === 'buyer:') return;
+                
+                // Skip if it's just the buyer name
+                if (lowerTrimmed === name) return;
+                
+                // Extract GSTIN and skip the line
+                const gstinMatch = trimmed.match(/GSTIN\s*[-:]\s*([A-Z0-9]{15})/i);
+                if (gstinMatch) {
+                    extractedGstin = gstinMatch[1].toUpperCase();
+                    return;
+                }
+                
+                cleanedLines.push(trimmed);
+            });
+            
+            // Update the textarea with cleaned content
+            detailsEl.value = cleanedLines.join('\n');
+            
+            // Fill GSTIN field if we extracted one and field is empty
+            if (extractedGstin && !gstinEl.value.trim()) {
+                gstinEl.value = extractedGstin;
+            }
+            
+            updatePreview();
+        }
+        
+        function updatePreview() {
+            const name = document.getElementById('buyer_name').value.trim();
+            const details = document.getElementById('buyer_details_textarea').value;
+            const gstin = document.getElementById('gstin').value.trim().toUpperCase();
+            
+            const preview = document.getElementById('addressPreview');
+            
+            if (!name && !details) {
+                preview.innerHTML = '<em>Start typing to see preview...</em>';
+                return;
+            }
+            
+            let html = '';
+            
+            // Always show the name prominently at the top
+            if (name) {
+                html += `<div class="name">${escapeHtml(name)}</div>`;
+            }
+            
+            if (details) {
+                const lines = details.split('\n').filter(l => l.trim());
+                lines.forEach(line => {
+                    const trimmedLine = line.trim();
+                    // Skip lines that are just "Buyer :" or duplicate the name
+                    if (trimmedLine.toLowerCase() === 'buyer :' || 
+                        trimmedLine.toLowerCase() === 'buyer:' ||
+                        trimmedLine.toLowerCase() === name.toLowerCase()) {
+                        return;
+                    }
+                    html += `<div>${escapeHtml(trimmedLine)}</div>`;
+                });
+            }
+            
+            // Add GSTIN if not already in details
+            if (gstin && !details.toUpperCase().includes(gstin)) {
+                html += `<div>GSTIN - ${escapeHtml(gstin)}</div>`;
+            }
+            
+            preview.innerHTML = html || '<em>Start typing to see preview...</em>';
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Initial preview
+        updatePreview();
+    </script>
+</body>
+</html>

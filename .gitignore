@@ -1,42 +1,40 @@
-# Ignore everything
-*
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.class
 
-# But not these files...
-!*.py
-!templates/
-!templates/*.html
-!requirements.txt
-!README.md
-!shakambhari-web
+# Environment
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
 
-# Exclude personal and sensitive files
+# Project Specific Data to protect
 buyer_profiles.json
 transport_modes.json
-output_bill_cgst_sgst.xlsx
-output_bill_igst.xlsx
-Shakambhari Bill Gen.bat
-__pycache__/
-2024-25/
-Ewaybills/
+_backups/
+logs/
+*.log
+
+# Spreadsheets & outputs
+*.xlsx
+# Exception for templates if you need them: !templates/*.xlsx
 Generated_Invoices/
 Generated_Invoices_PDF/
 GST Invoices/
-copy1.py
+Ewaybills/
+2024-25/
 
-# Local/runtime noise
-logs/
-_backups/
-*.log
-
-# Python environments and cache
-.venv/
-venv/
-__pycache__/
-
-# Cloud credentials and local env files
+# Cloud and Local deployment credentials
+service-account.json
 cloud/service-account.json
 cloud/*.key
-cloud/.env
-cloud/.env.*
-.env
-.env.*
+*.key
+
+# OS generated files
+.DS_Store
+Thumbs.db
+

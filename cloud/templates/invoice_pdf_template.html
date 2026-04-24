@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Invoice {{ invoice.invoice_number }}</title>
+    <style>
+        @page { size: A4; margin: 10mm; }
+
+        body {
+            font-family: Arial, sans-serif;
+            font-size: 13px;
+            color: #000;
+        }
+
+        .sheet {
+            border: 1px solid #000;
+            width: 100%;
+            padding: 0;
+        }
+
+        .top-title {
+            text-align: center;
+            font-weight: 700;
+            border-bottom: 1px solid #000;
+            padding: 2px 0;
+            font-size: 12px;
+        }
+
+        .meta-grid {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .meta-grid td {
+            border-right: 1px solid #000;
+            border-bottom: 1px solid #000;
+            vertical-align: top;
+            padding: 4px;
+            height: 72px;
+        }
+
+        .meta-grid td:last-child { border-right: none; }
+
+        .meta-grid .seller,
+        .meta-grid .buyer {
+            width: 42%;
+        }
+
+        .meta-grid .invoice-no,
+        .meta-grid .transport {
+            width: 31%;
+        }
+
+        .meta-grid .date,
+        .meta-grid .blank {
+            width: 27%;
+        }
+
+        .label { font-weight: 700; }
+        .line { line-height: 1.3; }
+
+        .items {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .items th,
+        .items td {
+            border-right: 1px solid #000;
+            border-bottom: 1px solid #000;
+            padding: 2px 4px;
+            vertical-align: top;
+        }
+
+        .items th:last-child,
+        .items td:last-child { border-right: none; }
+
+        .num { text-align: right; white-space: nowrap; }
+        .center { text-align: center; }
+
+        .desc-col { width: 53%; }
+        .qty-col { width: 12%; }
+        .rate-col { width: 10%; }
+        .hsn-col { width: 13%; }
+        .amt-col { width: 12%; }
+
+        .totals-wrap {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .totals-wrap td {
+            border-right: 1px solid #000;
+            border-bottom: 1px solid #000;
+            padding: 2px 4px;
+            vertical-align: top;
+        }
+
+        .totals-wrap td:last-child { border-right: none; }
+
+        .left-pad { width: 53%; }
+        .totals-label { width: 24%; text-align: right; }
+        .totals-rate { width: 11%; text-align: right; }
+        .totals-amount { width: 12%; text-align: right; }
+
+        .amount-words {
+            border-bottom: 1px solid #000;
+            padding: 4px;
+            min-height: 22px;
+        }
+
+        .footer {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .footer td {
+            border-right: 1px solid #000;
+            padding: 6px 4px;
+            vertical-align: top;
+            height: 86px;
+        }
+
+        .footer td:last-child { border-right: none; }
+        .bank { width: 60%; }
+        .sign { width: 40%; text-align: center; }
+        .subject {
+            text-align: center;
+            border-top: 1px solid #000;
+            padding: 2px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    {% set tm = (invoice.transport_mode or '').strip() %}
+    {% if tm and tm.lower().startswith('mode of transport') %}
+        {% set transport_display = tm %}
+    {% elif tm %}
+        {% set transport_display = 'Mode of Transport: ' ~ tm %}
+    {% else %}
+        {% set transport_display = '' %}
+    {% endif %}
+
+    <div class="sheet">
+        <div class="top-title">GST INVOICE</div>
+
+        <table class="meta-grid">
+            <tr>
+                <td class="seller">
+                    <div class="line"><span class="label">Seller :</span></div>
+                    <div class="line">M/S Shakambhari Enterprises</div>
+                    <div class="line">144/145 J.N Mukherjee Road Ghusuri</div>
+                    <div class="line">Howrah (Near Rajesh Weight Bridge)</div>
+                    <div class="line">G.S.T No : 19ACZPN5725A1Z8</div>
+                </td>
+                <td class="invoice-no">
+                    <div class="line"><span class="label">INVOICE NO.</span> {{ invoice.invoice_number }}</div>
+                </td>
+                <td class="date">
+                    <div class="line"><span class="label">Date :</span> {{ invoice.invoice_date_display }}</div>
+                </td>
+            </tr>
+            <tr>
+                <td class="buyer">
+                    <div class="line"><span class="label">Buyer :</span></div>
+                    {% for detail in invoice.buyer_details %}
+                        {% if detail.strip() and detail.strip().lower() != 'buyer :' %}
+                            <div class="line">{{ detail }}</div>
+                        {% endif %}
+                    {% endfor %}
+                    {% if invoice.buyer_gstin %}
+                        <div class="line">GST: {{ invoice.buyer_gstin }}</div>
+                    {% endif %}
+                </td>
+                <td class="transport" colspan="2">
+                    <div class="line" style="margin-top: 26px;">{{ transport_display }}</div>
+                </td>
+            </tr>
+        </table>
+
+        <table class="items">
+            <thead>
+                <tr>
+                    <th class="desc-col center">Description of Goods</th>
+                    <th class="qty-col center">Quantity</th>
+                    <th class="rate-col center">Rate</th>
+                    <th class="hsn-col center">HSN CODE</th>
+                    <th class="amt-col center">Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in invoice.get('items', []) %}
+                    <tr>
+                        <td>{{ item.description }}</td>
+                        <td class="num">{{ "%.3f"|format(item.quantity) }}</td>
+                        <td class="num">{{ "%.2f"|format(item.rate) }}</td>
+                        <td class="center">{{ item.get('hsn', '') }}</td>
+                        <td class="num">{{ "%.2f"|format(item.quantity * item.rate) }}</td>
+                    </tr>
+                {% endfor %}
+
+                {% for _ in range(10 - (invoice.get('items', [])|length)) %}
+                    <tr>
+                        <td>&nbsp;</td>
+                        <td>&nbsp;</td>
+                        <td>&nbsp;</td>
+                        <td>&nbsp;</td>
+                        <td>&nbsp;</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <table class="totals-wrap">
+            <tr>
+                <td class="left-pad"></td>
+                <td class="totals-label"><span class="label">TOTAL</span></td>
+                <td class="totals-rate"></td>
+                <td class="totals-amount">{{ "%.2f"|format(invoice.subtotal) }}</td>
+            </tr>
+
+            {% if invoice.delivery_charge and invoice.delivery_charge > 0 %}
+                <tr>
+                    <td class="left-pad"></td>
+                    <td class="totals-label"><span class="label">Delivery Charge</span></td>
+                    <td class="totals-rate"></td>
+                    <td class="totals-amount">{{ "%.2f"|format(invoice.delivery_charge) }}</td>
+                </tr>
+            {% endif %}
+
+            {% if invoice.tax_type == 'IGST' %}
+                <tr>
+                    <td class="left-pad"></td>
+                    <td class="totals-label"><span class="label">G.S.T SALES I.G.S.T @</span></td>
+                    <td class="totals-rate">5.00%</td>
+                    <td class="totals-amount">{{ "%.2f"|format(invoice.igst_amount) }}</td>
+                </tr>
+            {% else %}
+                <tr>
+                    <td class="left-pad"></td>
+                    <td class="totals-label"><span class="label">G.S.T SALES C.G.S.T @</span></td>
+                    <td class="totals-rate">2.50%</td>
+                    <td class="totals-amount">{{ "%.2f"|format(invoice.cgst_amount) }}</td>
+                </tr>
+                <tr>
+                    <td class="left-pad"></td>
+                    <td class="totals-label"><span class="label">G.S.T SALES S.G.S.T @</span></td>
+                    <td class="totals-rate">2.50%</td>
+                    <td class="totals-amount">{{ "%.2f"|format(invoice.sgst_amount) }}</td>
+                </tr>
+            {% endif %}
+
+            <tr>
+                <td class="left-pad"></td>
+                <td class="totals-label"><span class="label">Round off</span></td>
+                <td class="totals-rate"></td>
+                <td class="totals-amount">{{ "%.2f"|format(invoice.round_off_value) }}</td>
+            </tr>
+            <tr>
+                <td class="left-pad"></td>
+                <td class="totals-label"><span class="label">TOTAL</span></td>
+                <td class="totals-rate"></td>
+                <td class="totals-amount"><span class="label">{{ "%.2f"|format(invoice.rounded_total) }}</span></td>
+            </tr>
+        </table>
+
+        <div class="amount-words">
+            <span class="label">AMOUNT :</span>
+            {% if invoice.amount_in_words %}
+                {{ invoice.amount_in_words.replace('Rupees ', '') }}
+            {% else %}
+                Zero Only
+            {% endif %}
+        </div>
+
+        <table class="footer">
+            <tr>
+                <td class="bank">
+                    Bank Details:<br>
+                    ICICI Bank<br>
+                    Salt lake Sector 2 Branch<br>
+                    A/C No.: 004205008313<br>
+                    IFSC No.: ICIC0000042
+                </td>
+                <td class="sign">
+                    <div style="margin-top: 38px;">For Shakambhari Enterprises</div>
+                    <div style="margin-top: 34px;">Authorised Signatory.</div>
+                </td>
+            </tr>
+        </table>
+
+        <div class="subject">Subject to Howrah Jurisdiction.</div>
+    </div>
+</body>
+</html>
