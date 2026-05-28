@@ -268,26 +268,16 @@
                 <div class="form-group">
                     <label for="buyer_details_textarea">Buyer Details (Address)</label>
                     <textarea id="buyer_details_textarea" name="buyer_details_textarea" 
-                              placeholder="Enter address details (do NOT repeat buyer name here):
+                              placeholder="Enter only the address and GST line here. Do NOT type the buyer name or Buyer: prefix:
 Street Address / Market Name
 Area / Locality
-City, STATE - PINCODE CODE-XX"
+City, STATE - PINCODE
+GSTIN - 19XXXXXXXXXXXXXX"
                               oninput="updatePreview()">{{ profile.buyer_details_textarea if profile else '' }}</textarea>
                     <p class="hint">
-                        Enter address lines only. The buyer name above will be shown automatically at the top of the invoice. GSTIN will be added from the field below.
+                        Enter address lines only. The app will add <strong>Buyer:</strong> and the buyer name automatically on preview and in the saved sheet row.
                         <button type="button" onclick="cleanupDetails()" style="margin-left: 10px; padding: 3px 8px; font-size: 0.75rem; cursor: pointer;">🧹 Clean Up</button>
                     </p>
-                </div>
-                
-                <div class="form-group">
-                    <label for="gstin">GSTIN</label>
-                    <input type="text" id="gstin" name="gstin" 
-                           value="{{ profile.gstin if profile else '' }}"
-                           placeholder="e.g., 19AABCT1234Z1ZV"
-                           style="text-transform: uppercase;"
-                           maxlength="15"
-                           oninput="updatePreview()">
-                    <p class="hint">15-character GST Identification Number. Leave blank if unregistered.</p>
                 </div>
                 
                 <div class="form-group">
@@ -328,12 +318,10 @@ City, STATE - PINCODE CODE-XX"
         function cleanupDetails() {
             const name = document.getElementById('buyer_name').value.trim().toLowerCase();
             const detailsEl = document.getElementById('buyer_details_textarea');
-            const gstinEl = document.getElementById('gstin');
             
             let details = detailsEl.value;
             let lines = details.split('\n');
             let cleanedLines = [];
-            let extractedGstin = '';
             
             lines.forEach(line => {
                 let trimmed = line.trim();
@@ -348,23 +336,11 @@ City, STATE - PINCODE CODE-XX"
                 // Skip if it's just the buyer name
                 if (lowerTrimmed === name) return;
                 
-                // Extract GSTIN and skip the line
-                const gstinMatch = trimmed.match(/GSTIN\s*[-:]\s*([A-Z0-9]{15})/i);
-                if (gstinMatch) {
-                    extractedGstin = gstinMatch[1].toUpperCase();
-                    return;
-                }
-                
                 cleanedLines.push(trimmed);
             });
             
             // Update the textarea with cleaned content
             detailsEl.value = cleanedLines.join('\n');
-            
-            // Fill GSTIN field if we extracted one and field is empty
-            if (extractedGstin && !gstinEl.value.trim()) {
-                gstinEl.value = extractedGstin;
-            }
             
             updatePreview();
         }
@@ -372,7 +348,6 @@ City, STATE - PINCODE CODE-XX"
         function updatePreview() {
             const name = document.getElementById('buyer_name').value.trim();
             const details = document.getElementById('buyer_details_textarea').value;
-            const gstin = document.getElementById('gstin').value.trim().toUpperCase();
             
             const preview = document.getElementById('addressPreview');
             
@@ -383,7 +358,8 @@ City, STATE - PINCODE CODE-XX"
             
             let html = '';
             
-            // Always show the name prominently at the top
+            html += `<div>Buyer:</div>`;
+
             if (name) {
                 html += `<div class="name">${escapeHtml(name)}</div>`;
             }
@@ -400,11 +376,6 @@ City, STATE - PINCODE CODE-XX"
                     }
                     html += `<div>${escapeHtml(trimmedLine)}</div>`;
                 });
-            }
-            
-            // Add GSTIN if not already in details
-            if (gstin && !details.toUpperCase().includes(gstin)) {
-                html += `<div>GSTIN - ${escapeHtml(gstin)}</div>`;
             }
             
             preview.innerHTML = html || '<em>Start typing to see preview...</em>';

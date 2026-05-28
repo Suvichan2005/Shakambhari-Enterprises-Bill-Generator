@@ -191,6 +191,15 @@ def get_sheets_db() -> GoogleSheetsDB:
     return _sheets_db
 
 
+def get_sheets_db_or_none() -> Optional[GoogleSheetsDB]:
+    """Return the Sheets DB if configured, otherwise None."""
+    try:
+        return get_sheets_db()
+    except Exception as exc:
+        app.logger.warning("Sheets DB unavailable: %s", exc)
+        return None
+
+
 def get_cloud_storage() -> CloudStorage:
     """Get or initialize the Cloud Storage connection."""
     global _cloud_storage
@@ -207,6 +216,76 @@ def _safe_filename(filename: str, expected_ext: str) -> str:
     if not safe.lower().endswith(ext):
         safe = f"{os.path.splitext(safe)[0]}{ext}"
     return safe
+
+
+def _split_detail_lines(raw_text: str) -> List[str]:
+    """Split a textarea value into cleaned non-empty lines."""
+    return [line.strip() for line in (raw_text or '').splitlines() if line.strip()]
+
+
+def _extract_gstin_from_lines(lines: List[str]) -> str:
+    """Extract a GSTIN from detail lines when one is present."""
+    for line in lines:
+        match = re.search(r'(?:GST\s*IN|GSTIN)\s*[-:]\s*([0-9A-Z]{15})', line, re.IGNORECASE)
+        if match:
+            return match.group(1).upper()
+
+        compact = re.sub(r'[^0-9A-Z]', '', line.upper())
+        if len(compact) == 15 and re.fullmatch(r'[0-9A-Z]{15}', compact):
+            return compact
+
+    return ''
+
+
+def _normalize_buyer_details_for_storage(buyer_name: str, raw_text: str, fallback_gstin: str = '') -> tuple[list[str], str]:
+    """Build the canonical buyer_details block stored in Sheets."""
+    normalized_lines = []
+    buyer_name_clean = (buyer_name or '').strip()
+    fallback_gstin = (fallback_gstin or '').strip().upper()
+
+    for line in _split_detail_lines(raw_text):
+        lowered = line.lower()
+        if lowered in {'buyer:', 'buyer :'}:
+            continue
+        if buyer_name_clean and lowered == buyer_name_clean.lower():
+            continue
+        normalized_lines.append(line)
+
+    gstin = _extract_gstin_from_lines(normalized_lines) or fallback_gstin
+    if gstin and not any(gstin in line.upper() for line in normalized_lines):
+        normalized_lines.append(f'GSTIN - {gstin}')
+
+    stored_lines = []
+    if buyer_name_clean:
+        stored_lines = ['Buyer:', buyer_name_clean] + normalized_lines
+    else:
+        stored_lines = normalized_lines
+
+    return stored_lines, gstin
+
+
+def _details_for_edit_form(profile: Dict[str, Any]) -> str:
+    """Convert stored canonical buyer_details back into editable address-only lines."""
+    buyer_name = (profile.get('buyer_name') or '').strip().lower()
+    lines = profile.get('buyer_details') or []
+    fallback_gstin = (profile.get('gstin') or '').strip().upper()
+    cleaned = []
+
+    for line in lines:
+        stripped = (line or '').strip()
+        lowered = stripped.lower()
+        if not stripped:
+            continue
+        if lowered in {'buyer:', 'buyer :'}:
+            continue
+        if buyer_name and lowered == buyer_name:
+            continue
+        cleaned.append(stripped)
+
+    if fallback_gstin and not any(fallback_gstin in line.upper() for line in cleaned):
+        cleaned.append(f'GSTIN - {fallback_gstin}')
+
+    return '\n'.join(cleaned)
 
 
 def _filename_from_storage_url(storage_url: str, expected_ext: str) -> str:
@@ -470,7 +549,11 @@ def _financial_year_suffix(today: datetime = None) -> str:
 
 def suggest_next_invoice_number() -> str:
     """Suggest the next invoice number based on the last one."""
-    db = get_sheets_db()
+    db = get_sheets_db_or_none()
+    if db is None:
+        fy = _financial_year_suffix()
+        return f"1{fy}"
+
     last_num = db.get_last_invoice_number()
     
     if not last_num:
@@ -954,22 +1037,40 @@ def generate_pdf_from_excel(excel_bytes: bytes, excel_filename: str) -> Optional
 @app.route('/')
 def index():
     """Main invoice generation page."""
-    db = get_sheets_db()
-    
+    today_date = datetime.now().strftime('%Y-%m-%d')
+    suggestion = suggest_next_invoice_number()
+    db = get_sheets_db_or_none()
+    bucket = os.environ.get('GCS_BUCKET_NAME', '')
+    project = os.environ.get('GOOGLE_CLOUD_PROJECT', '')
+    bucket_base = f"https://console.cloud.google.com/storage/browser/{bucket}"
+    project_suffix = f"?project={project}" if project else ''
+
+    if db is None:
+        flash("Sheets configuration is missing, so saved profiles and invoice history are unavailable.", "warning")
+        return render_template(
+            'index.html',
+            buyer_profiles=[],
+            transport_modes=[],
+            today_date=today_date,
+            suggested_invoice_number=suggestion,
+            recent_invoices=[],
+            preload_invoice=None,
+            open_records=(request.args.get('open_records') == '1'),
+            bucket_console_url=f"{bucket_base}{project_suffix}" if bucket else '',
+            invoices_folder_url=f"{bucket_base}/invoices/{project_suffix}" if bucket else '',
+            pdfs_folder_url=f"{bucket_base}/pdfs/{project_suffix}" if bucket else '',
+        )
+
     buyer_profiles = db.get_all_buyers()
     transport_modes = db.get_all_transport_modes()
-    today_date = datetime.now().strftime('%Y-%m-%d')
-    
-    # Sort buyers by name
+
     buyer_profiles.sort(key=lambda p: p.get('buyer_name', '').lower())
-    
-    # Normalize transport modes and enrich from invoice history for better suggestions.
+
     invoice_transport_modes = [inv.get('transport_mode', '') for inv in db.get_all_invoices(limit=500)]
     combined_transport_modes = [m for m in (transport_modes + invoice_transport_modes) if m]
     transport_cores = list(set(extract_transport_core(m) for m in combined_transport_modes if extract_transport_core(m)))
     transport_cores.sort()
-    
-    suggestion = suggest_next_invoice_number()
+
     recent_invoices = _build_invoice_rows(db.get_all_invoices(limit=2000))
     try:
         storage_rows = get_cloud_storage().list_invoices(limit=2000)
@@ -977,17 +1078,9 @@ def index():
     except Exception as exc:
         app.logger.warning('Could not list storage invoices for modal merge: %s', exc)
 
-    bucket = os.environ.get('GCS_BUCKET_NAME', '')
-    project = os.environ.get('GOOGLE_CLOUD_PROJECT', '')
-    bucket_base = f"https://console.cloud.google.com/storage/browser/{bucket}"
-    project_suffix = f"?project={project}" if project else ''
-    
-    # Check if loading a specific invoice
     load_invoice_number = request.args.get('load', '')
-    preload_invoice = None
-    if load_invoice_number:
-        preload_invoice = db.get_invoice(load_invoice_number)
-    
+    preload_invoice = db.get_invoice(load_invoice_number) if load_invoice_number else None
+
     return render_template('index.html',
                           buyer_profiles=buyer_profiles,
                           transport_modes=transport_cores,
@@ -1200,9 +1293,19 @@ def download_pdf(filename):
 @app.route('/profiles')
 def list_profiles():
     """List all buyer profiles."""
-    db = get_sheets_db()
-    profiles = db.get_all_buyers()
-    profiles.sort(key=lambda p: p.get('buyer_name', '').lower())
+    try:
+        db = get_sheets_db_or_none()
+        if db is None:
+            raise ValueError("Sheets configuration is missing")
+        profiles = db.get_all_buyers()
+        profiles.sort(key=lambda p: p.get('buyer_name', '').lower())
+    except Exception:
+        app.logger.exception("Failed to load buyer profiles")
+        flash(
+            "Buyer profiles could not be loaded right now. Check your Sheets configuration.",
+            "error",
+        )
+        profiles = []
     return render_template('list_profiles.html', profiles=profiles)
 
 
@@ -1210,22 +1313,37 @@ def list_profiles():
 @app.route('/profile/<profile_id>', methods=['GET', 'POST'])
 def manage_profile(profile_id=None):
     """Create or edit a buyer profile."""
-    db = get_sheets_db()
+    db = get_sheets_db_or_none()
     
     is_new_profile = profile_id is None
     profile = None
+
+    if db is None:
+        flash("Set SPREADSHEET_ID and Google credentials before managing profiles.", "error")
+        profile = {
+            'buyer_name': '',
+            'buyer_details': [],
+            'buyer_details_textarea': '',
+            'gstin': '',
+            'default_tax_type': 'IGST',
+            'profile_id': profile_id or ''
+        }
+        return render_template('profile_form.html', profile=profile, is_new_profile=is_new_profile)
     
     if profile_id:
         profile = db.get_buyer(profile_id)
         if not profile:
             flash("Profile not found.", "error")
             return redirect(url_for('list_profiles'))
+
+    if profile and request.method == 'GET':
+        profile['buyer_details_textarea'] = _details_for_edit_form(profile)
     
     if request.method == 'POST':
         buyer_name = request.form.get('buyer_name', '').strip()
         buyer_details_str = request.form.get('buyer_details_textarea', '')
-        buyer_details = [line.strip() for line in buyer_details_str.split('\n') if line.strip()]
-        gstin = request.form.get('gstin', '').strip().upper()
+        fallback_gstin = (profile or {}).get('gstin', '')
+        buyer_details, gstin = _normalize_buyer_details_for_storage(buyer_name, buyer_details_str, fallback_gstin)
         default_tax_type = request.form.get('default_tax_type', 'IGST')
         
         if not buyer_name:
@@ -1240,10 +1358,23 @@ def manage_profile(profile_id=None):
             }
             return render_template('profile_form.html', profile=profile_data,
                                  is_new_profile=is_new_profile)
+
+        if not buyer_details_str.strip():
+            flash("Buyer address details are required.", "error")
+            profile_data = {
+                'buyer_name': buyer_name,
+                'buyer_details_textarea': buyer_details_str,
+                'buyer_details': buyer_details,
+                'gstin': gstin,
+                'default_tax_type': default_tax_type,
+                'profile_id': profile_id or gstin or ''
+            }
+            return render_template('profile_form.html', profile=profile_data,
+                                 is_new_profile=is_new_profile)
         
         if is_new_profile:
             # Generate profile ID
-            new_profile_id = gstin if gstin else f"{buyer_name.replace(' ', '_')}_{uuid.uuid4().hex[:8]}"
+            new_profile_id = profile_id or gstin or f"{buyer_name.replace(' ', '_')}_{uuid.uuid4().hex[:8]}"
         else:
             new_profile_id = profile_id
         
@@ -1280,7 +1411,10 @@ def manage_profile(profile_id=None):
 @app.route('/profile/<profile_id>/delete', methods=['POST'])
 def delete_profile(profile_id):
     """Delete a buyer profile."""
-    db = get_sheets_db()
+    db = get_sheets_db_or_none()
+    if db is None:
+        flash("Set SPREADSHEET_ID and Google credentials before deleting profiles.", "error")
+        return redirect(url_for('list_profiles'))
     
     if db.delete_buyer(profile_id):
         flash("Profile deleted successfully.", "success")
@@ -1310,10 +1444,43 @@ def calculate_preview_route():
     return calculate_preview()
 
 
+@app.route('/cleanup_profiles', methods=['POST'])
+def cleanup_profiles():
+    """Remove duplicate and invalid buyer profiles."""
+    db = get_sheets_db_or_none()
+    if db is None:
+        flash("Set SPREADSHEET_ID and Google credentials before cleaning up profiles.", "error")
+        return redirect(url_for('list_profiles'))
+
+    buyer_profiles = db.get_all_buyers()
+    original_count = len(buyer_profiles)
+    valid_profiles = [p for p in buyer_profiles if p.get('profile_id') and p.get('buyer_name')]
+
+    deduped = []
+    seen_ids = set()
+    for profile in valid_profiles:
+        profile_id = profile.get('profile_id')
+        if profile_id in seen_ids:
+            continue
+        seen_ids.add(profile_id)
+        deduped.append(profile)
+
+    deduped.sort(key=lambda p: p.get('buyer_name', '').lower())
+
+    if len(deduped) < original_count:
+        flash(f"Cleanup complete. Removed {original_count - len(deduped)} duplicate/invalid profiles.", "success")
+    else:
+        flash("No duplicate or invalid profiles found.", "success")
+
+    return redirect(url_for('list_profiles'))
+
+
 @app.route('/api/invoice/<path:invoice_number>')
 def api_get_invoice(invoice_number):
     """API endpoint to get invoice data for loading."""
-    db = get_sheets_db()
+    db = get_sheets_db_or_none()
+    if db is None:
+        return jsonify({'error': 'Sheets configuration is missing'}), 503
     invoice = db.get_invoice(invoice_number)
     
     if not invoice:
