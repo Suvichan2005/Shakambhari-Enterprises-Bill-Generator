@@ -911,6 +911,32 @@
                                 <input type="radio" name="tax_type_override" value="CGST_SGST">
                                 <span>CGST/SGST (2.5% each)</span>
                             </label>
+                            <label class="tax-option">
+                                <input type="radio" name="tax_type_override" value="CUSTOM_IGST">
+                                <span>Custom IGST</span>
+                            </label>
+                            <label class="tax-option">
+                                <input type="radio" name="tax_type_override" value="CUSTOM_CGST_SGST">
+                                <span>Custom CGST + SGST</span>
+                            </label>
+                        </div>
+
+                        <div id="custom_tax_fields" style="display:none; margin-top: 15px;">
+                            <div class="form-group" data-tax-mode="CUSTOM_IGST" style="display:none;">
+                                <label for="tax_rate_igst">Custom IGST Rate (%)</label>
+                                <input type="number" name="tax_rate_igst" id="tax_rate_igst" value="18" min="0" step="any">
+                            </div>
+
+                            <div data-tax-mode="CUSTOM_CGST_SGST" style="display:none; gap: 12px; flex-wrap: wrap;">
+                                <div class="form-group" style="flex:1; min-width: 180px; margin-bottom: 0;">
+                                    <label for="tax_rate_cgst">Custom CGST Rate (%)</label>
+                                    <input type="number" name="tax_rate_cgst" id="tax_rate_cgst" value="9" min="0" step="any">
+                                </div>
+                                <div class="form-group" style="flex:1; min-width: 180px; margin-bottom: 0;">
+                                    <label for="tax_rate_sgst">Custom SGST Rate (%)</label>
+                                    <input type="number" name="tax_rate_sgst" id="tax_rate_sgst" value="9" min="0" step="any">
+                                </div>
+                            </div>
                         </div>
                     </div>
                     
@@ -974,15 +1000,15 @@
                             <td id="preview_delivery_charge">₹0.00</td>
                         </tr>
                         <tr id="row_igst">
-                            <td>IGST (5%):</td>
+                            <td id="preview_igst_label">IGST (5%):</td>
                             <td id="preview_igst">₹0.00</td>
                         </tr>
                         <tr id="row_cgst" style="display: none;">
-                            <td>CGST (2.5%):</td>
+                            <td id="preview_cgst_label">CGST (2.5%):</td>
                             <td id="preview_cgst">₹0.00</td>
                         </tr>
                         <tr id="row_sgst" style="display: none;">
-                            <td>SGST (2.5%):</td>
+                            <td id="preview_sgst_label">SGST (2.5%):</td>
                             <td id="preview_sgst">₹0.00</td>
                         </tr>
                         <tr>
@@ -1057,6 +1083,10 @@
         const transportInput = document.getElementById('transport_mode_input');
         const transportDropdown = document.getElementById('transport_dropdown');
         const deliveryInput = document.getElementById('delivery_charge');
+        const customTaxFields = document.getElementById('custom_tax_fields');
+        const taxRateIgstInput = document.getElementById('tax_rate_igst');
+        const taxRateCgstInput = document.getElementById('tax_rate_cgst');
+        const taxRateSgstInput = document.getElementById('tax_rate_sgst');
         
         const itemsContainer = document.getElementById('items_container');
         let itemCounter = 0;
@@ -1324,9 +1354,68 @@
             const profile = buyerProfiles.find(p => p.profile_id === profileId);
             return profile?.default_tax_type || 'IGST';
         }
+
+        function getRawTaxMode() {
+            const selected = document.querySelector('input[name="tax_type_override"]:checked');
+            return selected ? selected.value : 'PROFILE_DEFAULT';
+        }
+
+        function getSelectedTaxRates() {
+            return {
+                tax_rate_igst: taxRateIgstInput ? (parseFloat(taxRateIgstInput.value) || 0) : 0,
+                tax_rate_cgst: taxRateCgstInput ? (parseFloat(taxRateCgstInput.value) || 0) : 0,
+                tax_rate_sgst: taxRateSgstInput ? (parseFloat(taxRateSgstInput.value) || 0) : 0,
+            };
+        }
+
+        function syncCustomTaxFields() {
+            const taxMode = getRawTaxMode();
+            const showCustom = taxMode === 'CUSTOM_IGST' || taxMode === 'CUSTOM_CGST_SGST';
+
+            if (customTaxFields) {
+                customTaxFields.style.display = showCustom ? 'block' : 'none';
+            }
+
+            document.querySelectorAll('[data-tax-mode]').forEach(el => {
+                if (el.dataset.taxMode === taxMode) {
+                    el.style.display = taxMode === 'CUSTOM_CGST_SGST' ? 'flex' : 'block';
+                } else {
+                    el.style.display = 'none';
+                }
+            });
+        }
+
+        function applyTaxModeFromData(data) {
+            const taxType = data?.tax_type || 'PROFILE_DEFAULT';
+            const radio = document.querySelector(`input[name="tax_type_override"][value="${taxType}"]`);
+            if (radio) {
+                radio.checked = true;
+            }
+
+            if (taxRateIgstInput && data?.tax_rate_igst !== undefined && data?.tax_rate_igst !== null) {
+                taxRateIgstInput.value = data.tax_rate_igst;
+            }
+            if (taxRateCgstInput && data?.tax_rate_cgst !== undefined && data?.tax_rate_cgst !== null) {
+                taxRateCgstInput.value = data.tax_rate_cgst;
+            }
+            if (taxRateSgstInput && data?.tax_rate_sgst !== undefined && data?.tax_rate_sgst !== null) {
+                taxRateSgstInput.value = data.tax_rate_sgst;
+            }
+
+            syncCustomTaxFields();
+        }
         
         document.querySelectorAll('input[name="tax_type_override"]').forEach(radio => {
-            radio.addEventListener('change', updatePreview);
+            radio.addEventListener('change', () => {
+                syncCustomTaxFields();
+                updatePreview();
+            });
+        });
+
+        [taxRateIgstInput, taxRateCgstInput, taxRateSgstInput].forEach(input => {
+            if (input) {
+                input.addEventListener('input', updatePreview);
+            }
         });
         
         // ================= PREVIEW UPDATE =================
@@ -1398,10 +1487,18 @@
             
             // Calculate totals via API
             try {
+                const taxRates = getSelectedTaxRates();
                 const response = await fetch('{{ url_for("calculate_preview_route") }}', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ items, tax_type: taxType, delivery_charge: deliveryCharge })
+                    body: JSON.stringify({
+                        items,
+                        tax_type: taxType,
+                        delivery_charge: deliveryCharge,
+                        tax_rate_igst: taxRates.tax_rate_igst,
+                        tax_rate_cgst: taxRates.tax_rate_cgst,
+                        tax_rate_sgst: taxRates.tax_rate_sgst,
+                    })
                 });
 
                 // Ignore stale responses from older requests.
@@ -1420,9 +1517,13 @@
                     document.getElementById('preview_roundoff').textContent = `₹${data.round_off_value}`;
                     document.getElementById('preview_total').textContent = `₹${data.rounded_total}`;
                     document.getElementById('preview_words').textContent = data.amount_in_words;
+
+                    document.getElementById('preview_igst_label').textContent = `IGST (${data.igst_rate}%):`;
+                    document.getElementById('preview_cgst_label').textContent = `CGST (${data.cgst_rate}%):`;
+                    document.getElementById('preview_sgst_label').textContent = `SGST (${data.sgst_rate}%):`;
                     
                     // Show/hide tax rows based on type
-                    const isIGST = taxType === 'IGST';
+                    const isIGST = data.display_tax_type === 'IGST';
                     const deliveryVal = parseFloat(data.delivery_charge) || 0;
                     const igstVal = parseFloat(data.igst_amount) || 0;
                     const cgstVal = parseFloat(data.cgst_amount) || 0;
@@ -1603,11 +1704,8 @@
                     selectBuyer(matchedProfile.profile_id);
                 }
                 
-                // Set tax type
-                if (data.tax_type) {
-                    const radio = document.querySelector(`input[name="tax_type_override"][value="${data.tax_type}"]`);
-                    if (radio) radio.checked = true;
-                }
+                // Set tax type and rates
+                applyTaxModeFromData(data);
                 
                 // Clear existing items and add from loaded data - reset counter
                 itemsContainer.innerHTML = '';
@@ -1656,6 +1754,10 @@
             
             // Reset tax type to profile default
             document.querySelector('input[name="tax_type_override"][value="PROFILE_DEFAULT"]').checked = true;
+            if (taxRateIgstInput) taxRateIgstInput.value = 18;
+            if (taxRateCgstInput) taxRateCgstInput.value = 9;
+            if (taxRateSgstInput) taxRateSgstInput.value = 9;
+            syncCustomTaxFields();
             
             // Reset items - clear all and add one fresh row
             itemsContainer.innerHTML = '';
@@ -1696,11 +1798,8 @@
                 selectBuyer(matchedProfile.profile_id);
             }
             
-            // Set tax type
-            if (data.tax_type) {
-                const radio = document.querySelector(`input[name="tax_type_override"][value="${data.tax_type}"]`);
-                if (radio) radio.checked = true;
-            }
+            // Set tax type and rates
+            applyTaxModeFromData(data);
             
             // Clear default items and add loaded ones - reset counter first
             itemsContainer.innerHTML = '';

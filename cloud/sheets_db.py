@@ -169,15 +169,32 @@ class GoogleSheetsDB:
     
     INVOICE_HEADERS = [
         'invoice_number', 'invoice_date', 'buyer_name', 'buyer_gstin', 
-        'items_json', 'subtotal', 'tax_type', 'tax_amount', 'total_amount',
+        'items_json', 'subtotal', 'tax_type', 'display_tax_type', 'tax_rate_igst', 'tax_rate_cgst', 'tax_rate_sgst', 'tax_amount', 'total_amount',
         'transport_mode', 'file_url', 'pdf_url', 'created_at'
     ]
+
+    def _invoice_row_to_record(self, row: List[str]) -> Dict:
+        """Map a raw worksheet row onto the current invoice schema."""
+        values = list(row) + [''] * max(0, len(self.INVOICE_HEADERS) - len(row))
+        record = dict(zip(self.INVOICE_HEADERS, values[:len(self.INVOICE_HEADERS)]))
+
+        for key in ('subtotal', 'tax_rate_igst', 'tax_rate_cgst', 'tax_rate_sgst', 'tax_amount', 'total_amount'):
+            try:
+                record[key] = float(record.get(key, 0) or 0)
+            except (TypeError, ValueError):
+                record[key] = 0.0
+
+        return record
     
     def get_all_invoices(self, limit: Optional[int] = 100) -> List[Dict]:
         """Get recent invoices."""
         sheet = self._get_or_create_sheet('Invoices', self.INVOICE_HEADERS)
-        records = sheet.get_all_records()
-        
+        rows = sheet.get_all_values()
+        if not rows:
+            return []
+
+        records = [self._invoice_row_to_record(row) for row in rows[1:]]
+
         # Parse items JSON
         for record in records:
             if record.get('items_json'):
@@ -185,6 +202,12 @@ class GoogleSheetsDB:
                     record['items'] = json.loads(record['items_json'])
                 except json.JSONDecodeError:
                     record['items'] = []
+            else:
+                record['items'] = []
+
+            record['display_tax_type'] = record.get('display_tax_type') or (
+                'CGST_SGST' if str(record.get('tax_type', '')).upper() == 'CGST_SGST' else 'IGST'
+            )
         
         # Sort by date descending and limit
         records.sort(key=lambda x: x.get('created_at', ''), reverse=True)
@@ -207,6 +230,10 @@ class GoogleSheetsDB:
             items_json,
             invoice.get('subtotal', 0),
             invoice.get('tax_type', 'IGST'),
+            invoice.get('display_tax_type', 'IGST'),
+            invoice.get('tax_rate_igst', 5.0),
+            invoice.get('tax_rate_cgst', 2.5),
+            invoice.get('tax_rate_sgst', 2.5),
             invoice.get('tax_amount', 0),
             invoice.get('total_amount', 0),
             invoice.get('transport_mode', ''),

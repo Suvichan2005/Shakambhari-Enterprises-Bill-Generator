@@ -229,24 +229,24 @@
                 </tr>
             {% endif %}
 
-            {% if invoice.tax_type == 'IGST' %}
+            {% if invoice.display_tax_type == 'IGST' %}
                 <tr>
                     <td class="left-pad"></td>
                     <td class="totals-label"><span class="label">G.S.T SALES I.G.S.T @</span></td>
-                    <td class="totals-rate">5.00%</td>
+                    <td class="totals-rate">{{ "%.2f"|format(invoice.igst_rate) }}%</td>
                     <td class="totals-amount">{{ "%.2f"|format(invoice.igst_amount) }}</td>
                 </tr>
             {% else %}
                 <tr>
                     <td class="left-pad"></td>
                     <td class="totals-label"><span class="label">G.S.T SALES C.G.S.T @</span></td>
-                    <td class="totals-rate">2.50%</td>
+                    <td class="totals-rate">{{ "%.2f"|format(invoice.cgst_rate) }}%</td>
                     <td class="totals-amount">{{ "%.2f"|format(invoice.cgst_amount) }}</td>
                 </tr>
                 <tr>
                     <td class="left-pad"></td>
                     <td class="totals-label"><span class="label">G.S.T SALES S.G.S.T @</span></td>
-                    <td class="totals-rate">2.50%</td>
+                    <td class="totals-rate">{{ "%.2f"|format(invoice.sgst_rate) }}%</td>
                     <td class="totals-amount">{{ "%.2f"|format(invoice.sgst_amount) }}</td>
                 </tr>
             {% endif %}

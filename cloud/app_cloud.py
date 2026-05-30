@@ -615,20 +615,78 @@ def round_half_up(value: float) -> int:
     return int(Decimal(str(value)).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
 
 
-def calculate_invoice_totals(items: List[Dict], tax_type: str = 'IGST', delivery_charge: float = 0.0) -> Dict:
+def _resolve_tax_scheme(
+    tax_type: str,
+    tax_rate_igst: float = 5.0,
+    tax_rate_cgst: float = 2.5,
+    tax_rate_sgst: float = 2.5,
+) -> Dict[str, Any]:
+    """Resolve a tax mode into display labels and numeric rates."""
+    mode = (tax_type or 'IGST').strip().upper()
+    if mode == 'PROFILE_DEFAULT':
+        mode = 'IGST'
+
+    if mode == 'CUSTOM_IGST':
+        rate = max(0.0, safe_float(tax_rate_igst, 18.0))
+        return {
+            'tax_type': mode,
+            'display_type': 'IGST',
+            'igst_rate': rate,
+            'cgst_rate': 0.0,
+            'sgst_rate': 0.0,
+        }
+
+    if mode == 'CUSTOM_CGST_SGST':
+        cgst_rate = max(0.0, safe_float(tax_rate_cgst, 9.0))
+        sgst_rate = max(0.0, safe_float(tax_rate_sgst, 9.0))
+        return {
+            'tax_type': mode,
+            'display_type': 'CGST_SGST',
+            'igst_rate': 0.0,
+            'cgst_rate': cgst_rate,
+            'sgst_rate': sgst_rate,
+        }
+
+    if mode == 'CGST_SGST':
+        return {
+            'tax_type': mode,
+            'display_type': 'CGST_SGST',
+            'igst_rate': 0.0,
+            'cgst_rate': max(0.0, safe_float(tax_rate_cgst, 2.5)),
+            'sgst_rate': max(0.0, safe_float(tax_rate_sgst, 2.5)),
+        }
+
+    return {
+        'tax_type': 'IGST',
+        'display_type': 'IGST',
+        'igst_rate': max(0.0, safe_float(tax_rate_igst, 5.0)),
+        'cgst_rate': 0.0,
+        'sgst_rate': 0.0,
+    }
+
+
+def calculate_invoice_totals(
+    items: List[Dict],
+    tax_type: str = 'IGST',
+    delivery_charge: float = 0.0,
+    tax_rate_igst: float = 5.0,
+    tax_rate_cgst: float = 2.5,
+    tax_rate_sgst: float = 2.5,
+) -> Dict:
     """Calculate invoice totals from items."""
     subtotal = sum(safe_float(item.get('quantity', 0), 0.0) * safe_float(item.get('rate', 0), 0.0) for item in items)
     delivery_charge = max(0.0, safe_float(delivery_charge, 0.0))
     taxable_amount = subtotal + delivery_charge
+    tax_scheme = _resolve_tax_scheme(tax_type, tax_rate_igst, tax_rate_cgst, tax_rate_sgst)
     
-    if tax_type == 'IGST':
-        igst = round(taxable_amount * 0.05, 2)
+    if tax_scheme['display_type'] == 'IGST':
+        igst = round(taxable_amount * (tax_scheme['igst_rate'] / 100.0), 2)
         tax_amount = igst
         cgst = sgst = 0
     else:
         igst = 0
-        cgst = round(taxable_amount * 0.025, 2)
-        sgst = round(taxable_amount * 0.025, 2)
+        cgst = round(taxable_amount * (tax_scheme['cgst_rate'] / 100.0), 2)
+        sgst = round(taxable_amount * (tax_scheme['sgst_rate'] / 100.0), 2)
         tax_amount = cgst + sgst
     
     total_before_round = round(taxable_amount + tax_amount, 2)
@@ -643,6 +701,11 @@ def calculate_invoice_totals(items: List[Dict], tax_type: str = 'IGST', delivery
         'cgst_amount': round(cgst, 2),
         'sgst_amount': round(sgst, 2),
         'tax_amount': round(tax_amount, 2),
+        'tax_type': tax_scheme['tax_type'],
+        'display_tax_type': tax_scheme['display_type'],
+        'igst_rate': round(tax_scheme['igst_rate'], 2),
+        'cgst_rate': round(tax_scheme['cgst_rate'], 2),
+        'sgst_rate': round(tax_scheme['sgst_rate'], 2),
         'round_off_value': round(round_off, 2),
         'rounded_total': rounded_total,
         'amount_in_words': amount_in_words(rounded_total)
@@ -849,11 +912,17 @@ def generate_invoice_excel(invoice_data: Dict) -> bytes:
     dest_sheet['I30'].number_format = '0.00'
 
     tax_type = invoice_data.get('tax_type', 'IGST')
+    tax_scheme = _resolve_tax_scheme(
+        tax_type,
+        invoice_data.get('tax_rate_igst', 5.0),
+        invoice_data.get('tax_rate_cgst', 2.5),
+        invoice_data.get('tax_rate_sgst', 2.5),
+    )
     tax_base_formula = '(I29+I30)'
-    if tax_type == 'IGST':
+    if tax_scheme['display_type'] == 'IGST':
         dest_sheet['C31'] = 'G.S.T SALES I.G.S.T @'
-        dest_sheet['E31'] = '5.00%'
-        dest_sheet['I31'] = f'=ROUND({tax_base_formula}*0.05, 2)'
+        dest_sheet['E31'] = f"{tax_scheme['igst_rate']:.2f}%"
+        dest_sheet['I31'] = f'=ROUND({tax_base_formula}*{tax_scheme["igst_rate"]}/100, 2)'
         dest_sheet['I31'].number_format = '0.00'
 
         dest_sheet['C32'] = 'G.S.T SALES C.G.S.T @'
@@ -866,13 +935,13 @@ def generate_invoice_excel(invoice_data: Dict) -> bytes:
         dest_sheet['I33'] = ''
     else:
         dest_sheet['C31'] = 'G.S.T SALES C.G.S.T @'
-        dest_sheet['E31'] = '2.50%'
-        dest_sheet['I31'] = f'=ROUND({tax_base_formula}*0.025, 2)'
+        dest_sheet['E31'] = f"{tax_scheme['cgst_rate']:.2f}%"
+        dest_sheet['I31'] = f'=ROUND({tax_base_formula}*{tax_scheme["cgst_rate"]}/100, 2)'
         dest_sheet['I31'].number_format = '0.00'
 
         dest_sheet['C32'] = 'G.S.T SALES S.G.S.T @'
-        dest_sheet['E32'] = '2.50%'
-        dest_sheet['I32'] = f'=ROUND({tax_base_formula}*0.025, 2)'
+        dest_sheet['E32'] = f"{tax_scheme['sgst_rate']:.2f}%"
+        dest_sheet['I32'] = f'=ROUND({tax_base_formula}*{tax_scheme["sgst_rate"]}/100, 2)'
         dest_sheet['I32'].number_format = '0.00'
 
         dest_sheet['C33'] = ''
@@ -889,22 +958,22 @@ def generate_invoice_excel(invoice_data: Dict) -> bytes:
 
     subtotal = sum(safe_float(item.get('quantity', 0), 0.0) * safe_float(item.get('rate', 0), 0.0) for item in items)
     tax_base_value = subtotal + delivery_charge
-    if tax_type == 'IGST':
-        igst_value = tax_base_value * 0.05
+    if tax_scheme['display_type'] == 'IGST':
+        igst_value = tax_base_value * (tax_scheme['igst_rate'] / 100.0)
         dest_sheet.row_dimensions[31].hidden = igst_value <= 0
         dest_sheet.row_dimensions[32].hidden = True
     else:
-        cgst_value = tax_base_value * 0.025
-        sgst_value = tax_base_value * 0.025
+        cgst_value = tax_base_value * (tax_scheme['cgst_rate'] / 100.0)
+        sgst_value = tax_base_value * (tax_scheme['sgst_rate'] / 100.0)
         dest_sheet.row_dimensions[31].hidden = cgst_value <= 0
         dest_sheet.row_dimensions[32].hidden = sgst_value <= 0
     dest_sheet.row_dimensions[30].hidden = delivery_charge <= 0
     dest_sheet.row_dimensions[33].hidden = False
 
-    if tax_type == 'IGST':
-        tax_amount = tax_base_value * 0.05
+    if tax_scheme['display_type'] == 'IGST':
+        tax_amount = tax_base_value * (tax_scheme['igst_rate'] / 100.0)
     else:
-        tax_amount = tax_base_value * 0.05
+        tax_amount = tax_base_value * ((tax_scheme['cgst_rate'] + tax_scheme['sgst_rate']) / 100.0)
     total_before_round = subtotal + delivery_charge + tax_amount
     rounded_total = round_half_up(total_before_round)
     # Remove any old amount words text from adjacent cells.
@@ -1122,6 +1191,9 @@ def generate_invoice():
             flash("Delivery charge cannot be negative.", "error")
             return redirect(url_for('index'))
         tax_type_override = request.form.get('tax_type_override', 'PROFILE_DEFAULT')
+        tax_rate_igst = safe_float(request.form.get('tax_rate_igst', '5').strip(), 5.0)
+        tax_rate_cgst = safe_float(request.form.get('tax_rate_cgst', '2.5').strip(), 2.5)
+        tax_rate_sgst = safe_float(request.form.get('tax_rate_sgst', '2.5').strip(), 2.5)
         
         # Get buyer profile
         buyer = db.get_buyer(buyer_profile_id)
@@ -1175,7 +1247,14 @@ def generate_invoice():
             return redirect(url_for('index'))
         
         # Calculate totals
-        totals = calculate_invoice_totals(items, tax_type, delivery_charge=delivery_charge)
+        totals = calculate_invoice_totals(
+            items,
+            tax_type,
+            delivery_charge=delivery_charge,
+            tax_rate_igst=tax_rate_igst,
+            tax_rate_cgst=tax_rate_cgst,
+            tax_rate_sgst=tax_rate_sgst,
+        )
         
         # Prepare invoice data
         invoice_data = {
@@ -1189,6 +1268,10 @@ def generate_invoice():
             'transport_mode': transport_mode,
             'delivery_charge': delivery_charge,
             'tax_type': tax_type,
+            'display_tax_type': totals['display_tax_type'],
+            'tax_rate_igst': totals['igst_rate'],
+            'tax_rate_cgst': totals['cgst_rate'],
+            'tax_rate_sgst': totals['sgst_rate'],
             **totals
         }
         
@@ -1221,6 +1304,10 @@ def generate_invoice():
             'items': items,
             'subtotal': totals['subtotal'],
             'tax_type': tax_type,
+            'display_tax_type': totals['display_tax_type'],
+            'tax_rate_igst': totals['igst_rate'],
+            'tax_rate_cgst': totals['cgst_rate'],
+            'tax_rate_sgst': totals['sgst_rate'],
             'tax_amount': totals['tax_amount'],
             'total_amount': totals['rounded_total'],
             'transport_mode': transport_mode,
@@ -1433,8 +1520,18 @@ def calculate_preview():
     items = data.get('items', [])
     tax_type = data.get('tax_type', 'IGST')
     delivery_charge = safe_float(data.get('delivery_charge', 0), 0.0)
-    
-    totals = calculate_invoice_totals(items, tax_type, delivery_charge=delivery_charge)
+    tax_rate_igst = safe_float(data.get('tax_rate_igst', 5.0), 5.0)
+    tax_rate_cgst = safe_float(data.get('tax_rate_cgst', 2.5), 2.5)
+    tax_rate_sgst = safe_float(data.get('tax_rate_sgst', 2.5), 2.5)
+
+    totals = calculate_invoice_totals(
+        items,
+        tax_type,
+        delivery_charge=delivery_charge,
+        tax_rate_igst=tax_rate_igst,
+        tax_rate_cgst=tax_rate_cgst,
+        tax_rate_sgst=tax_rate_sgst,
+    )
     return jsonify(totals)
 
 
