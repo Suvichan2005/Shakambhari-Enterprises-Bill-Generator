@@ -924,17 +924,17 @@
                         <div id="custom_tax_fields" style="display:none; margin-top: 15px;">
                             <div class="form-group" data-tax-mode="CUSTOM_IGST" style="display:none;">
                                 <label for="tax_rate_igst">Custom IGST Rate (%)</label>
-                                <input type="number" name="tax_rate_igst" id="tax_rate_igst" value="18" min="0" step="any">
+                                <input type="number" name="tax_rate_igst" id="tax_rate_igst" value="5" min="0" step="any" disabled>
                             </div>
 
                             <div data-tax-mode="CUSTOM_CGST_SGST" style="display:none; gap: 12px; flex-wrap: wrap;">
                                 <div class="form-group" style="flex:1; min-width: 180px; margin-bottom: 0;">
                                     <label for="tax_rate_cgst">Custom CGST Rate (%)</label>
-                                    <input type="number" name="tax_rate_cgst" id="tax_rate_cgst" value="9" min="0" step="any">
+                                    <input type="number" name="tax_rate_cgst" id="tax_rate_cgst" value="2.5" min="0" step="any" disabled>
                                 </div>
                                 <div class="form-group" style="flex:1; min-width: 180px; margin-bottom: 0;">
                                     <label for="tax_rate_sgst">Custom SGST Rate (%)</label>
-                                    <input type="number" name="tax_rate_sgst" id="tax_rate_sgst" value="9" min="0" step="any">
+                                    <input type="number" name="tax_rate_sgst" id="tax_rate_sgst" value="2.5" min="0" step="any" disabled>
                                 </div>
                             </div>
                         </div>
@@ -1360,11 +1360,74 @@
             return selected ? selected.value : 'PROFILE_DEFAULT';
         }
 
-        function getSelectedTaxRates() {
+        function resetCustomTaxFields() {
+            if (taxRateIgstInput) {
+                taxRateIgstInput.value = '5';
+                taxRateIgstInput.disabled = true;
+            }
+            if (taxRateCgstInput) {
+                taxRateCgstInput.value = '2.5';
+                taxRateCgstInput.disabled = true;
+            }
+            if (taxRateSgstInput) {
+                taxRateSgstInput.value = '2.5';
+                taxRateSgstInput.disabled = true;
+            }
+        }
+
+        function enableCustomTaxFields(taxMode) {
+            const isCustomIgst = taxMode === 'CUSTOM_IGST';
+            const isCustomCgstSgst = taxMode === 'CUSTOM_CGST_SGST';
+
+            if (taxRateIgstInput) {
+                taxRateIgstInput.disabled = !isCustomIgst;
+                if (isCustomIgst && !taxRateIgstInput.value) {
+                    taxRateIgstInput.value = '5';
+                }
+            }
+            if (taxRateCgstInput) {
+                taxRateCgstInput.disabled = !isCustomCgstSgst;
+                if (isCustomCgstSgst && !taxRateCgstInput.value) {
+                    taxRateCgstInput.value = '2.5';
+                }
+            }
+            if (taxRateSgstInput) {
+                taxRateSgstInput.disabled = !isCustomCgstSgst;
+                if (isCustomCgstSgst && !taxRateSgstInput.value) {
+                    taxRateSgstInput.value = '2.5';
+                }
+            }
+        }
+
+        function getSelectedTaxRates(taxType = getSelectedTaxType()) {
+            if (taxType === 'CUSTOM_IGST') {
+                return {
+                    tax_rate_igst: taxRateIgstInput ? (parseFloat(taxRateIgstInput.value) || 5) : 5,
+                    tax_rate_cgst: 0,
+                    tax_rate_sgst: 0,
+                };
+            }
+
+            if (taxType === 'CUSTOM_CGST_SGST') {
+                return {
+                    tax_rate_igst: 0,
+                    tax_rate_cgst: taxRateCgstInput ? (parseFloat(taxRateCgstInput.value) || 2.5) : 2.5,
+                    tax_rate_sgst: taxRateSgstInput ? (parseFloat(taxRateSgstInput.value) || 2.5) : 2.5,
+                };
+            }
+
+            if (taxType === 'CGST_SGST') {
+                return {
+                    tax_rate_igst: 0,
+                    tax_rate_cgst: 2.5,
+                    tax_rate_sgst: 2.5,
+                };
+            }
+
             return {
-                tax_rate_igst: taxRateIgstInput ? (parseFloat(taxRateIgstInput.value) || 0) : 0,
-                tax_rate_cgst: taxRateCgstInput ? (parseFloat(taxRateCgstInput.value) || 0) : 0,
-                tax_rate_sgst: taxRateSgstInput ? (parseFloat(taxRateSgstInput.value) || 0) : 0,
+                tax_rate_igst: 5,
+                tax_rate_cgst: 0,
+                tax_rate_sgst: 0,
             };
         }
 
@@ -1374,6 +1437,12 @@
 
             if (customTaxFields) {
                 customTaxFields.style.display = showCustom ? 'block' : 'none';
+            }
+
+            if (showCustom) {
+                enableCustomTaxFields(taxMode);
+            } else {
+                resetCustomTaxFields();
             }
 
             document.querySelectorAll('[data-tax-mode]').forEach(el => {
@@ -1392,14 +1461,18 @@
                 radio.checked = true;
             }
 
-            if (taxRateIgstInput && data?.tax_rate_igst !== undefined && data?.tax_rate_igst !== null) {
-                taxRateIgstInput.value = data.tax_rate_igst;
-            }
-            if (taxRateCgstInput && data?.tax_rate_cgst !== undefined && data?.tax_rate_cgst !== null) {
-                taxRateCgstInput.value = data.tax_rate_cgst;
-            }
-            if (taxRateSgstInput && data?.tax_rate_sgst !== undefined && data?.tax_rate_sgst !== null) {
-                taxRateSgstInput.value = data.tax_rate_sgst;
+            if (taxType === 'CUSTOM_IGST' || taxType === 'CUSTOM_CGST_SGST') {
+                if (taxRateIgstInput && data?.tax_rate_igst !== undefined && data?.tax_rate_igst !== null) {
+                    taxRateIgstInput.value = data.tax_rate_igst;
+                }
+                if (taxRateCgstInput && data?.tax_rate_cgst !== undefined && data?.tax_rate_cgst !== null) {
+                    taxRateCgstInput.value = data.tax_rate_cgst;
+                }
+                if (taxRateSgstInput && data?.tax_rate_sgst !== undefined && data?.tax_rate_sgst !== null) {
+                    taxRateSgstInput.value = data.tax_rate_sgst;
+                }
+            } else {
+                resetCustomTaxFields();
             }
 
             syncCustomTaxFields();
@@ -1487,7 +1560,7 @@
             
             // Calculate totals via API
             try {
-                const taxRates = getSelectedTaxRates();
+                const taxRates = getSelectedTaxRates(taxType);
                 const response = await fetch('{{ url_for("calculate_preview_route") }}', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },

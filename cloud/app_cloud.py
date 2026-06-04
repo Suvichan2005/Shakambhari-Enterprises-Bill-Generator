@@ -626,8 +626,12 @@ def _resolve_tax_scheme(
     if mode == 'PROFILE_DEFAULT':
         mode = 'IGST'
 
+    default_igst_rate = 5.0
+    default_cgst_rate = 2.5
+    default_sgst_rate = 2.5
+
     if mode == 'CUSTOM_IGST':
-        rate = max(0.0, safe_float(tax_rate_igst, 18.0))
+        rate = max(0.0, safe_float(tax_rate_igst, default_igst_rate))
         return {
             'tax_type': mode,
             'display_type': 'IGST',
@@ -637,8 +641,8 @@ def _resolve_tax_scheme(
         }
 
     if mode == 'CUSTOM_CGST_SGST':
-        cgst_rate = max(0.0, safe_float(tax_rate_cgst, 9.0))
-        sgst_rate = max(0.0, safe_float(tax_rate_sgst, 9.0))
+        cgst_rate = max(0.0, safe_float(tax_rate_cgst, default_cgst_rate))
+        sgst_rate = max(0.0, safe_float(tax_rate_sgst, default_sgst_rate))
         return {
             'tax_type': mode,
             'display_type': 'CGST_SGST',
@@ -652,14 +656,14 @@ def _resolve_tax_scheme(
             'tax_type': mode,
             'display_type': 'CGST_SGST',
             'igst_rate': 0.0,
-            'cgst_rate': max(0.0, safe_float(tax_rate_cgst, 2.5)),
-            'sgst_rate': max(0.0, safe_float(tax_rate_sgst, 2.5)),
+            'cgst_rate': default_cgst_rate,
+            'sgst_rate': default_sgst_rate,
         }
 
     return {
         'tax_type': 'IGST',
         'display_type': 'IGST',
-        'igst_rate': max(0.0, safe_float(tax_rate_igst, 5.0)),
+        'igst_rate': default_igst_rate,
         'cgst_rate': 0.0,
         'sgst_rate': 0.0,
     }
