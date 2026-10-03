@@ -256,6 +256,18 @@
         <div class="card">
             <form method="POST" action="{{ url_for('manage_profile', profile_id=profile.profile_id if profile and profile.profile_id else None) }}">
                 
+                <!-- AI Scan Visiting Card Helper -->
+                <div style="background: #eef2ff; border: 1px dashed #6366f1; padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                    <div>
+                        <strong style="color: #3730a3; font-size: 0.95rem;">📷 Have a visiting card or GST document?</strong>
+                        <div style="font-size: 0.82rem; color: #4338ca;">Snap or choose a photo to auto-fill name, address lines, and GSTIN.</div>
+                    </div>
+                    <label style="background: #4f46e5; color: white; padding: 8px 16px; border-radius: 6px; font-weight: 600; font-size: 0.9rem; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                        📸 Snap / Choose Card
+                        <input type="file" accept="image/*" style="display: none;" onchange="scanCardWithAi(event)">
+                    </label>
+                </div>
+
                 <div class="form-group">
                     <label for="buyer_name" class="required">Buyer Name</label>
                     <input type="text" id="buyer_name" name="buyer_name" 
@@ -268,26 +280,16 @@
                 <div class="form-group">
                     <label for="buyer_details_textarea">Buyer Details (Address)</label>
                     <textarea id="buyer_details_textarea" name="buyer_details_textarea" 
-                              placeholder="Enter address details (do NOT repeat buyer name here):
+                              placeholder="Enter only the address and GST line here. Do NOT type the buyer name or Buyer: prefix:
 Street Address / Market Name
 Area / Locality
-City, STATE - PINCODE CODE-XX"
+City, STATE - PINCODE
+GSTIN - 19XXXXXXXXXXXXXX"
                               oninput="updatePreview()">{{ profile.buyer_details_textarea if profile else '' }}</textarea>
                     <p class="hint">
-                        Enter address lines only. The buyer name above will be shown automatically at the top of the invoice. GSTIN will be added from the field below.
+                        Enter address lines only. The app will add <strong>Buyer:</strong> and the buyer name automatically on preview and in the saved sheet row.
                         <button type="button" onclick="cleanupDetails()" style="margin-left: 10px; padding: 3px 8px; font-size: 0.75rem; cursor: pointer;">🧹 Clean Up</button>
                     </p>
-                </div>
-                
-                <div class="form-group">
-                    <label for="gstin">GSTIN</label>
-                    <input type="text" id="gstin" name="gstin" 
-                           value="{{ profile.gstin if profile else '' }}"
-                           placeholder="e.g., 19AABCT1234Z1ZV"
-                           style="text-transform: uppercase;"
-                           maxlength="15"
-                           oninput="updatePreview()">
-                    <p class="hint">15-character GST Identification Number. Leave blank if unregistered.</p>
                 </div>
                 
                 <div class="form-group">
@@ -328,12 +330,10 @@ City, STATE - PINCODE CODE-XX"
         function cleanupDetails() {
             const name = document.getElementById('buyer_name').value.trim().toLowerCase();
             const detailsEl = document.getElementById('buyer_details_textarea');
-            const gstinEl = document.getElementById('gstin');
             
             let details = detailsEl.value;
             let lines = details.split('\n');
             let cleanedLines = [];
-            let extractedGstin = '';
             
             lines.forEach(line => {
                 let trimmed = line.trim();
@@ -348,23 +348,11 @@ City, STATE - PINCODE CODE-XX"
                 // Skip if it's just the buyer name
                 if (lowerTrimmed === name) return;
                 
-                // Extract GSTIN and skip the line
-                const gstinMatch = trimmed.match(/GSTIN\s*[-:]\s*([A-Z0-9]{15})/i);
-                if (gstinMatch) {
-                    extractedGstin = gstinMatch[1].toUpperCase();
-                    return;
-                }
-                
                 cleanedLines.push(trimmed);
             });
             
             // Update the textarea with cleaned content
             detailsEl.value = cleanedLines.join('\n');
-            
-            // Fill GSTIN field if we extracted one and field is empty
-            if (extractedGstin && !gstinEl.value.trim()) {
-                gstinEl.value = extractedGstin;
-            }
             
             updatePreview();
         }
@@ -372,7 +360,6 @@ City, STATE - PINCODE CODE-XX"
         function updatePreview() {
             const name = document.getElementById('buyer_name').value.trim();
             const details = document.getElementById('buyer_details_textarea').value;
-            const gstin = document.getElementById('gstin').value.trim().toUpperCase();
             
             const preview = document.getElementById('addressPreview');
             
@@ -383,7 +370,8 @@ City, STATE - PINCODE CODE-XX"
             
             let html = '';
             
-            // Always show the name prominently at the top
+            html += `<div>Buyer:</div>`;
+
             if (name) {
                 html += `<div class="name">${escapeHtml(name)}</div>`;
             }
@@ -402,11 +390,6 @@ City, STATE - PINCODE CODE-XX"
                 });
             }
             
-            // Add GSTIN if not already in details
-            if (gstin && !details.toUpperCase().includes(gstin)) {
-                html += `<div>GSTIN - ${escapeHtml(gstin)}</div>`;
-            }
-            
             preview.innerHTML = html || '<em>Start typing to see preview...</em>';
         }
         
@@ -416,6 +399,84 @@ City, STATE - PINCODE CODE-XX"
             return div.innerHTML;
         }
         
+        async function scanCardWithAi(event) {
+            const file = event.target.files && event.target.files[0];
+            if (!file) return;
+
+            const apiKey = (localStorage.getItem('gemini_api_key') || '').trim();
+            const btn = event.target.parentElement;
+            const origText = btn.innerHTML;
+            btn.innerHTML = '⏳ Reading card...';
+
+            try {
+                // Resize image
+                const resized = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const img = new Image();
+                        img.onload = () => {
+                            let width = img.width, height = img.height;
+                            const maxDim = 1280;
+                            if (width > maxDim || height > maxDim) {
+                                if (width > height) { height = Math.round((height * maxDim) / width); width = maxDim; }
+                                else { width = Math.round((width * maxDim) / height); height = maxDim; }
+                            }
+                            const canvas = document.createElement('canvas');
+                            canvas.width = width; canvas.height = height;
+                            canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+                            resolve(canvas.toDataURL('image/jpeg', 0.8));
+                        };
+                        img.onerror = reject;
+                        img.src = e.target.result;
+                    };
+                    reader.onerror = reject;
+                    reader.readAsDataURL(file);
+                });
+
+                const response = await fetch('/api/ai/parse-bill', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Gemini-Key': apiKey },
+                    body: JSON.stringify({
+                        images: [{ data: resized, mime_type: 'image/jpeg' }],
+                        prompt: 'Extract visiting card details: buyer name, address lines, GSTIN, state code, and tax type.',
+                        create_new_buyer: false
+                    })
+                });
+
+                const res = await response.json();
+                if (!response.ok || !res.success) {
+                    throw new Error(res.error || 'Failed to read card');
+                }
+
+                const d = res.data;
+                if (d.buyer_name) document.getElementById('buyer_name').value = d.buyer_name;
+                
+                // Format address lines (excluding buyer name)
+                if (Array.isArray(d.buyer_details)) {
+                    const lines = d.buyer_details.filter(l => {
+                        const s = String(l || '').trim();
+                        return s && !s.toLowerCase().startsWith('buyer:') && s.toLowerCase() !== (d.buyer_name || '').toLowerCase();
+                    });
+                    document.getElementById('buyer_details_textarea').value = lines.join('\n');
+                }
+
+                if (d.tax_type) {
+                    const r = document.querySelector(`input[name="default_tax_type"][value="${d.tax_type}"]`);
+                    if (r) r.checked = true;
+                }
+
+                updatePreview();
+                alert('✓ Visiting card scanned successfully! Please review fields and save.');
+
+            } catch (err) {
+                console.error(err);
+                alert('Could not read visiting card: ' + err.message);
+            } finally {
+                btn.innerHTML = origText;
+                event.target.value = '';
+            }
+        }
+
         // Initial preview
         updatePreview();
     </script>

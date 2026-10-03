@@ -256,6 +256,18 @@
         <div class="card">
             <form method="POST" action="{{ url_for('manage_profile', profile_id=profile.profile_id if profile and profile.profile_id else None) }}">
                 
+                <!-- AI Scan Visiting Card Helper -->
+                <div style="background: #eef2ff; border: 1px dashed #6366f1; padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                    <div>
+                        <strong style="color: #3730a3; font-size: 0.95rem;">📷 Have a visiting card or GST document?</strong>
+                        <div style="font-size: 0.82rem; color: #4338ca;">Snap or choose a photo to auto-fill name, address lines, and GSTIN.</div>
+                    </div>
+                    <label style="background: #4f46e5; color: white; padding: 8px 16px; border-radius: 6px; font-weight: 600; font-size: 0.9rem; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                        📸 Snap / Choose Card
+                        <input type="file" accept="image/*" style="display: none;" onchange="scanCardWithAi(event)">
+                    </label>
+                </div>
+
                 <div class="form-group">
                     <label for="buyer_name" class="required">Buyer Name</label>
                     <input type="text" id="buyer_name" name="buyer_name" 
@@ -387,6 +399,84 @@ GSTIN - 19XXXXXXXXXXXXXX"
             return div.innerHTML;
         }
         
+        async function scanCardWithAi(event) {
+            const file = event.target.files && event.target.files[0];
+            if (!file) return;
+
+            const apiKey = (localStorage.getItem('gemini_api_key') || '').trim();
+            const btn = event.target.parentElement;
+            const origText = btn.innerHTML;
+            btn.innerHTML = '⏳ Reading card...';
+
+            try {
+                // Resize image
+                const resized = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const img = new Image();
+                        img.onload = () => {
+                            let width = img.width, height = img.height;
+                            const maxDim = 1280;
+                            if (width > maxDim || height > maxDim) {
+                                if (width > height) { height = Math.round((height * maxDim) / width); width = maxDim; }
+                                else { width = Math.round((width * maxDim) / height); height = maxDim; }
+                            }
+                            const canvas = document.createElement('canvas');
+                            canvas.width = width; canvas.height = height;
+                            canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+                            resolve(canvas.toDataURL('image/jpeg', 0.8));
+                        };
+                        img.onerror = reject;
+                        img.src = e.target.result;
+                    };
+                    reader.onerror = reject;
+                    reader.readAsDataURL(file);
+                });
+
+                const response = await fetch('/api/ai/parse-bill', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Gemini-Key': apiKey },
+                    body: JSON.stringify({
+                        images: [{ data: resized, mime_type: 'image/jpeg' }],
+                        prompt: 'Extract visiting card details: buyer name, address lines, GSTIN, state code, and tax type.',
+                        create_new_buyer: false
+                    })
+                });
+
+                const res = await response.json();
+                if (!response.ok || !res.success) {
+                    throw new Error(res.error || 'Failed to read card');
+                }
+
+                const d = res.data;
+                if (d.buyer_name) document.getElementById('buyer_name').value = d.buyer_name;
+                
+                // Format address lines (excluding buyer name)
+                if (Array.isArray(d.buyer_details)) {
+                    const lines = d.buyer_details.filter(l => {
+                        const s = String(l || '').trim();
+                        return s && !s.toLowerCase().startsWith('buyer:') && s.toLowerCase() !== (d.buyer_name || '').toLowerCase();
+                    });
+                    document.getElementById('buyer_details_textarea').value = lines.join('\n');
+                }
+
+                if (d.tax_type) {
+                    const r = document.querySelector(`input[name="default_tax_type"][value="${d.tax_type}"]`);
+                    if (r) r.checked = true;
+                }
+
+                updatePreview();
+                alert('✓ Visiting card scanned successfully! Please review fields and save.');
+
+            } catch (err) {
+                console.error(err);
+                alert('Could not read visiting card: ' + err.message);
+            } finally {
+                btn.innerHTML = origText;
+                event.target.value = '';
+            }
+        }
+
         // Initial preview
         updatePreview();
     </script>

@@ -1134,6 +1134,138 @@
         </div>
     </div>
     
+    <!-- AI Bill Assistant Modal -->
+    <div id="ai_modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content" style="max-width: 780px;">
+            <div class="modal-header" style="background: linear-gradient(135deg, #4f46e5, #7c3aed); color: white;">
+                <h2 style="color: white; margin: 0; font-size: 1.25rem;">📷 AI Bill Assistant (Scan Rough Slips / Cards)</h2>
+                <button type="button" class="modal-close" onclick="closeAiModal()" style="color: white;">&times;</button>
+            </div>
+            
+            <div style="padding: 20px; overflow-y: auto; max-height: calc(85vh - 70px);">
+                <div style="background: #eef2ff; border-left: 4px solid #6366f1; padding: 12px 16px; border-radius: 6px; margin-bottom: 18px;">
+                    <div style="font-weight: 600; color: #312e81; font-size: 0.95rem;">💡 How this works for Dad:</div>
+                    <div style="font-size: 0.88rem; color: #4338ca; margin-top: 4px;">
+                        Upload or snap photos of rough paper chits, visiting cards, or weight slips. Gemini AI reads them and fills the form for you. <strong>It will never generate the bill automatically</strong> — you can review, edit, or adjust anything on the screen before clicking Generate!
+                    </div>
+                </div>
+
+                <!-- Picture Upload Box (Multiple Pictures Allowed) -->
+                <div style="margin-bottom: 18px;">
+                    <label style="font-weight: 600; display: block; margin-bottom: 8px; color: #1e293b; font-size: 0.95rem;">
+                        📸 Upload Pictures (Multiple slips, front/back of card, etc.):
+                    </label>
+                    <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 10px;">
+                        <label style="background: #3b82f6; color: white; padding: 10px 18px; border-radius: 8px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 2px 5px rgba(59,130,246,0.3);">
+                            📸 Snap Camera Photo
+                            <input type="file" id="ai_camera_input" accept="image/*" capture="environment" style="display: none;" onchange="handleAiFileSelect(event)">
+                        </label>
+                        <label style="background: #475569; color: white; padding: 10px 18px; border-radius: 8px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;">
+                            📁 Choose Photos (Can select multiple)
+                            <input type="file" id="ai_file_input" accept="image/*" multiple style="display: none;" onchange="handleAiFileSelect(event)">
+                        </label>
+                    </div>
+
+                    <!-- Thumbnails grid -->
+                    <div id="ai_thumbnail_container" style="display: flex; gap: 10px; flex-wrap: wrap; min-height: 20px;"></div>
+                </div>
+
+                <!-- Notes / Instructions textarea -->
+                <div style="margin-bottom: 16px;">
+                    <label style="font-weight: 600; display: block; margin-bottom: 6px; color: #1e293b; font-size: 0.95rem;">
+                        💬 Notes or Spoken Instruction (Optional):
+                    </label>
+                    <textarea id="ai_prompt_text" rows="2" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 0.95rem; font-family: inherit; resize: vertical;" placeholder="e.g. Das Metal 2 bags utensils 89.080 kg at 400, send by Gaya transport, delivery 400"></textarea>
+                </div>
+
+                <!-- API Key Setting (collapsible / persistent) -->
+                <div style="margin-bottom: 18px;">
+                    <details style="font-size: 0.85rem; color: #64748b; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 12px;">
+                        <summary style="cursor: pointer; font-weight: 600; color: #475569;">⚙️ Free Gemini API Key Settings (Saved in your browser)</summary>
+                        <div style="margin-top: 10px;">
+                            <input type="password" id="ai_api_key_input" placeholder="Paste free key from https://aistudio.google.com/apikey" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.85rem;" oninput="saveAiKey(this.value)">
+                            <div style="margin-top: 4px; font-size: 0.8rem; color: #64748b;">
+                                Optional: If configured on server you don't need this. Otherwise, get a 100% free key with 15 requests/minute at Google AI Studio.
+                            </div>
+                        </div>
+                    </details>
+                </div>
+
+                <!-- Analyze Button & Progress -->
+                <div style="margin-bottom: 18px; display: flex; align-items: center; gap: 15px;">
+                    <button type="button" id="btn_analyze_slip" onclick="analyzeSlipWithAi()" style="background: linear-gradient(135deg, #4f46e5, #7c3aed); color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 1.05rem; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 4px 12px rgba(79,70,229,0.3);">
+                        ✨ Read Slip & Extract Details
+                    </button>
+                    <span id="ai_status_spinner" style="display: none; color: #4f46e5; font-weight: 600; font-size: 0.95rem;">
+                        ⏳ Analyzing images with Gemini Flash... Please wait.
+                    </span>
+                </div>
+
+                <!-- Results Display Card (Hidden until extracted) -->
+                <div id="ai_result_container" style="display: none; background: #f8fafc; border: 2px solid #818cf8; border-radius: 10px; padding: 18px; margin-top: 15px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">
+                        <h3 style="margin: 0; color: #312e81; font-size: 1.15rem;">🎯 Extracted Bill Summary</h3>
+                        <span id="ai_match_badge" style="padding: 4px 10px; border-radius: 20px; font-size: 0.82rem; font-weight: 600;"></span>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                        <div style="background: white; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                            <div style="font-size: 0.8rem; color: #64748b; font-weight: 600; text-transform: uppercase;">Buyer Party</div>
+                            <div id="ai_res_buyer" style="font-size: 1.05rem; font-weight: 700; color: #1e293b; margin-top: 4px;">-</div>
+                            <div id="ai_res_address" style="font-size: 0.82rem; color: #475569; margin-top: 4px; line-height: 1.4;"></div>
+                        </div>
+                        <div style="background: white; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                            <div style="font-size: 0.8rem; color: #64748b; font-weight: 600; text-transform: uppercase;">Transport & Tax</div>
+                            <div id="ai_res_transport" style="font-size: 0.95rem; font-weight: 600; color: #1e293b; margin-top: 4px;">-</div>
+                            <div id="ai_res_tax" style="font-size: 0.9rem; color: #4f46e5; font-weight: 600; margin-top: 4px;">-</div>
+                            <div id="ai_res_delivery" style="font-size: 0.85rem; color: #475569; margin-top: 2px;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Items Table -->
+                    <div style="background: white; border-radius: 8px; border: 1px solid #e2e8f0; overflow: hidden; margin-bottom: 15px;">
+                        <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+                            <thead>
+                                <tr style="background: #f1f5f9; text-align: left; border-bottom: 1px solid #e2e8f0;">
+                                    <th style="padding: 8px 12px;">Item</th>
+                                    <th style="padding: 8px 12px;">Bags</th>
+                                    <th style="padding: 8px 12px;">Quantity (kg)</th>
+                                    <th style="padding: 8px 12px;">Rate (₹)</th>
+                                    <th style="padding: 8px 12px; text-align: right;">Amount (₹)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ai_res_items_body"></tbody>
+                        </table>
+                    </div>
+
+                    <!-- Follow-up prompt inside card -->
+                    <div style="background: #eef2ff; padding: 10px 14px; border-radius: 8px; margin-bottom: 16px;">
+                        <label style="font-size: 0.85rem; font-weight: 600; color: #3730a3; display: block; margin-bottom: 4px;">
+                            💬 Need adjustments? Give follow-up instruction to AI:
+                        </label>
+                        <div style="display: flex; gap: 8px;">
+                            <input type="text" id="ai_followup_input" placeholder="e.g. Change rate to 410, or change transport to Road" style="flex: 1; padding: 8px 10px; border: 1px solid #c7d2fe; border-radius: 6px; font-size: 0.9rem;">
+                            <button type="button" onclick="refineSlipWithAi()" style="background: #4f46e5; color: white; border: none; padding: 8px 14px; border-radius: 6px; font-weight: 600; font-size: 0.88rem; cursor: pointer;">
+                                🔄 Re-analyze
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Big Apply Button -->
+                    <div style="text-align: center;">
+                        <button type="button" onclick="applyAiDataToForm()" style="background: #16a34a; color: white; border: none; padding: 14px 28px; border-radius: 8px; font-size: 1.15rem; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 10px; box-shadow: 0 4px 12px rgba(22,163,74,0.35);">
+                            👉 Autofill Invoice Form with this Data
+                        </button>
+                        <div style="font-size: 0.82rem; color: #64748b; margin-top: 8px;">
+                            (Form will be populated. You can still modify any field before manually generating.)
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+    
     <script>
         // Data from server
         const buyerProfiles = {{ buyer_profiles|tojson|safe }};
@@ -1372,15 +1504,31 @@
         });
         
         // ================= ITEMS MANAGEMENT =================
+        function renumberItemRows() {
+            const rows = itemsContainer.querySelectorAll('.item-row');
+            rows.forEach((row, i) => {
+                const num = i + 1;
+                const descInput = row.querySelector('input[name="item_description[]"]');
+                if (descInput) {
+                    const raw = descInput.value.trim();
+                    const clean = raw.replace(/^\d+\.\s*/, '').trim();
+                    descInput.value = `${num}. ${clean || 'Aluminium Utensils'}`;
+                }
+            });
+            updatePreview();
+        }
+
         function addItemRow(data = {}) {
             itemCounter++;
             const row = document.createElement('div');
             row.className = 'item-row';
             row.dataset.index = itemCounter;
             
-            // Get current item count for proper indexing
+            // Get current item count for proper sequential indexing
             const currentCount = itemsContainer.querySelectorAll('.item-row').length + 1;
-            const defaultDesc = data.description || `${currentCount}. Aluminium Utensils`;
+            let rawDesc = (data.description || 'Aluminium Utensils').trim();
+            rawDesc = rawDesc.replace(/^\d+\.\s*/, '').trim();
+            const defaultDesc = `${currentCount}. ${rawDesc}`;
             
             row.innerHTML = `
                 <div>
@@ -1421,7 +1569,7 @@
             const row = btn.closest('.item-row');
             if (itemsContainer.querySelectorAll('.item-row').length > 1) {
                 row.remove();
-                updatePreview();
+                renumberItemRows();
             } else {
                 alert('At least one item is required.');
             }
@@ -1633,19 +1781,24 @@
                 document.getElementById('preview_buyer_details').innerHTML = '';
             }
 
-            // E-Waybill Preview (Always visible with headers)
+            // E-Waybill Preview (conditional based on whether number is entered)
             const ewNum = (ewaybillNumberInput ? ewaybillNumberInput.value : '').trim();
             const ewDate = (ewaybillDateInput ? ewaybillDateInput.value : '').trim();
             const ewSec = document.getElementById('preview_ewaybill_section');
             const ewVal = document.getElementById('preview_ewaybill');
             if (ewSec && ewVal) {
-                ewSec.style.display = 'block';
-                let dateDisplay = '-';
-                if (ewDate) {
-                    const parts = ewDate.split('-');
-                    dateDisplay = (parts.length === 3) ? `${parts[2]}/${parts[1]}/${parts[0]}` : ewDate;
+                if (ewNum) {
+                    ewSec.style.display = 'block';
+                    let dateDisplay = '-';
+                    if (ewDate) {
+                        const parts = ewDate.split('-');
+                        dateDisplay = (parts.length === 3) ? `${parts[2]}/${parts[1]}/${parts[0]}` : ewDate;
+                    }
+                    ewVal.textContent = `Ewaybill No. ${ewNum} | Date : ${dateDisplay}`;
+                } else {
+                    ewSec.style.display = 'none';
+                    ewVal.textContent = '-';
                 }
-                ewVal.textContent = `Ewaybill No. ${ewNum ? ewNum : '-'} | Date : ${dateDisplay}`;
             }
 
             // Ship To Preview (Always synced with selected buyer profile, cleaned of redundant headers)
@@ -1699,10 +1852,13 @@
             if (items.length === 0 || items.every(i => !i.quantity && !i.rate)) {
                 previewBody.innerHTML = '<tr><td colspan="5">No items added</td></tr>';
             } else {
-                previewBody.innerHTML = items.map(item => {
+                previewBody.innerHTML = items.map((item, idx) => {
                     const amount = item.quantity * item.rate;
+                    let d = (item.description || '-').trim();
+                    const clean = d.replace(/^\d+\.\s*/, '').trim();
+                    const displayDesc = clean ? `${idx + 1}. ${clean}` : '-';
                     return `<tr>
-                        <td>${item.description || '-'}</td>
+                        <td>${displayDesc}</td>
                         <td>${item.quantity.toFixed(3)}</td>
                         <td>₹${item.rate.toFixed(2)}</td>
                         <td>${item.hsn || '-'}</td>
@@ -1769,25 +1925,42 @@
         document.getElementById('invoice_number').addEventListener('input', updatePreview);
         const invoiceDateInput = document.getElementById('invoice_date');
         let ewaybillDateManuallyEdited = false;
+
         if (ewaybillDateInput) {
             ewaybillDateInput.addEventListener('input', () => {
                 ewaybillDateManuallyEdited = true;
             });
             ewaybillDateInput.addEventListener('change', updatePreview);
         }
-        invoiceDateInput.addEventListener('input', () => {
-            if (!ewaybillDateManuallyEdited && ewaybillDateInput) {
-                ewaybillDateInput.value = invoiceDateInput.value;
+
+        if (ewaybillNumberInput) {
+            ewaybillNumberInput.addEventListener('input', () => {
+                const hasNum = !!ewaybillNumberInput.value.trim();
+                if (hasNum) {
+                    if (ewaybillDateInput && (!ewaybillDateInput.value || !ewaybillDateManuallyEdited)) {
+                        ewaybillDateInput.value = invoiceDateInput.value;
+                    }
+                } else {
+                    if (ewaybillDateInput) {
+                        ewaybillDateInput.value = '';
+                        ewaybillDateManuallyEdited = false;
+                    }
+                }
+                updatePreview();
+            });
+        }
+
+        function syncInvoiceDateToEwaybill() {
+            if (ewaybillNumberInput && ewaybillNumberInput.value.trim()) {
+                if (!ewaybillDateManuallyEdited && ewaybillDateInput) {
+                    ewaybillDateInput.value = invoiceDateInput.value;
+                }
             }
             updatePreview();
-        });
-        invoiceDateInput.addEventListener('change', () => {
-            if (!ewaybillDateManuallyEdited && ewaybillDateInput) {
-                ewaybillDateInput.value = invoiceDateInput.value;
-            }
-            updatePreview();
-        });
-        if (ewaybillNumberInput) ewaybillNumberInput.addEventListener('input', updatePreview);
+        }
+        invoiceDateInput.addEventListener('input', syncInvoiceDateToEwaybill);
+        invoiceDateInput.addEventListener('change', syncInvoiceDateToEwaybill);
+
         if (shipFromTextarea) shipFromTextarea.addEventListener('input', updatePreview);
         deliveryInput.addEventListener('input', updatePreview);
         
@@ -1838,6 +2011,19 @@
                 closeInvoiceModal();
             }
         });
+
+        function parseInvoiceNum(val) {
+            const m = String(val || '').match(/(\d+)/);
+            return m ? parseInt(m[1], 10) : 0;
+        }
+
+        function parseInvoiceDateIso(val) {
+            const s = String(val || '').trim();
+            if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0, 10);
+            const m = s.match(/^(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})/);
+            if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+            return s || '0000-00-00';
+        }
         
         function filterAndSortInvoices() {
             const search = document.getElementById('modal_invoice_search').value.toLowerCase();
@@ -1853,15 +2039,32 @@
             filtered.sort((a, b) => {
                 const aTs = Number(a.sort_ts || 0);
                 const bTs = Number(b.sort_ts || 0);
+                const aDate = parseInvoiceDateIso(a.invoice_date || a.modified_date || '');
+                const bDate = parseInvoiceDateIso(b.invoice_date || b.modified_date || '');
+                const aNum = parseInvoiceNum(a.invoice_number);
+                const bNum = parseInvoiceNum(b.invoice_number);
+
                 switch(sortBy) {
-                    case 'date_desc':
+                    case 'date_desc': {
+                        const dateComp = bDate.localeCompare(aDate);
+                        if (dateComp !== 0) return dateComp;
+                        if (bNum !== aNum) return bNum - aNum;
                         return bTs - aTs;
-                    case 'date_asc':
+                    }
+                    case 'date_asc': {
+                        const dateComp = aDate.localeCompare(bDate);
+                        if (dateComp !== 0) return dateComp;
+                        if (aNum !== bNum) return aNum - bNum;
                         return aTs - bTs;
-                    case 'number_desc':
-                        return invoiceSortKey(b.invoice_number || '').localeCompare(invoiceSortKey(a.invoice_number || ''), undefined, {numeric: true});
-                    case 'number_asc':
-                        return invoiceSortKey(a.invoice_number || '').localeCompare(invoiceSortKey(b.invoice_number || ''), undefined, {numeric: true});
+                    }
+                    case 'number_desc': {
+                        if (bNum !== aNum) return bNum - aNum;
+                        return bDate.localeCompare(aDate);
+                    }
+                    case 'number_asc': {
+                        if (aNum !== bNum) return aNum - bNum;
+                        return aDate.localeCompare(bDate);
+                    }
                     case 'buyer_asc':
                         return (a.buyer_name || '').localeCompare(b.buyer_name || '');
                     case 'buyer_desc':
@@ -1954,17 +2157,23 @@
                 const dd = String(today.getDate()).padStart(2, '0');
                 invDateEl.value = `${yyyy}-${mm}-${dd}`;
                 if (ewaybillNumberInput) ewaybillNumberInput.value = '';
-                if (ewaybillDateInput) ewaybillDateInput.value = invDateEl.value;
+                if (ewaybillDateInput) ewaybillDateInput.value = '';
                 ewaybillDateManuallyEdited = false;
             } else {
                 invNumEl.value = data.invoice_number || '';
                 invDateEl.value = formatToYyyyMmDd(data.invoice_date);
-                if (ewaybillNumberInput) ewaybillNumberInput.value = data.ewaybill_number || '';
-                if (data.ewaybill_date) {
-                    if (ewaybillDateInput) ewaybillDateInput.value = formatToYyyyMmDd(data.ewaybill_date);
-                    ewaybillDateManuallyEdited = true;
+                const hasEw = !!(data.ewaybill_number && String(data.ewaybill_number).trim());
+                if (ewaybillNumberInput) ewaybillNumberInput.value = hasEw ? data.ewaybill_number : '';
+                if (hasEw) {
+                    if (data.ewaybill_date) {
+                        if (ewaybillDateInput) ewaybillDateInput.value = formatToYyyyMmDd(data.ewaybill_date);
+                        ewaybillDateManuallyEdited = true;
+                    } else {
+                        if (ewaybillDateInput) ewaybillDateInput.value = invDateEl.value;
+                        ewaybillDateManuallyEdited = false;
+                    }
                 } else {
-                    if (ewaybillDateInput) ewaybillDateInput.value = invDateEl.value;
+                    if (ewaybillDateInput) ewaybillDateInput.value = '';
                     ewaybillDateManuallyEdited = false;
                 }
             }
@@ -2067,7 +2276,7 @@
             document.getElementById('invoice_number').value = '{{ suggested_invoice_number }}';
             document.getElementById('invoice_date').value = '{{ today_date }}';
             if (ewaybillNumberInput) ewaybillNumberInput.value = '';
-            if (ewaybillDateInput) ewaybillDateInput.value = '{{ today_date }}';
+            if (ewaybillDateInput) ewaybillDateInput.value = '';
             ewaybillDateManuallyEdited = false;
             
             // Reset transport & delivery
@@ -2113,6 +2322,320 @@
                 hideTransportDropdown();
             }
         });
+        
+        // ================= GEMINI AI ASSISTANT =================
+        let uploadedAiImages = []; // Array of { data: base64, mime_type: string, name: string }
+        let lastExtractedAiData = null;
+
+        function saveAiKey(key) {
+            localStorage.setItem('gemini_api_key', key.trim());
+        }
+
+        function openAiModal() {
+            const modal = document.getElementById('ai_modal');
+            modal.style.display = 'flex';
+            const savedKey = localStorage.getItem('gemini_api_key') || '';
+            const keyInput = document.getElementById('ai_api_key_input');
+            if (keyInput) keyInput.value = savedKey;
+            
+            // Reset previous state
+            uploadedAiImages = [];
+            lastExtractedAiData = null;
+            renderAiThumbnails();
+            document.getElementById('ai_prompt_text').value = '';
+            document.getElementById('ai_result_container').style.display = 'none';
+            document.getElementById('ai_status_spinner').style.display = 'none';
+            document.getElementById('btn_analyze_slip').disabled = false;
+        }
+
+        function closeAiModal() {
+            document.getElementById('ai_modal').style.display = 'none';
+        }
+
+        // Close on overlay click
+        document.getElementById('ai_modal').addEventListener('click', (e) => {
+            if (e.target.id === 'ai_modal') {
+                closeAiModal();
+            }
+        });
+
+        // Client-side image resizing to optimize token usage & stay within free rate limits
+        function resizeImage(file, maxDimension = 1280, quality = 0.8) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        let width = img.width;
+                        let height = img.height;
+                        if (width > maxDimension || height > maxDimension) {
+                            if (width > height) {
+                                height = Math.round((height * maxDimension) / width);
+                                width = maxDimension;
+                            } else {
+                                width = Math.round((width * maxDimension) / height);
+                                height = maxDimension;
+                            }
+                        }
+                        const canvas = document.createElement('canvas');
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+                        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+                        resolve({
+                            data: dataUrl,
+                            mime_type: 'image/jpeg',
+                            name: file.name
+                        });
+                    };
+                    img.onerror = reject;
+                    img.src = e.target.result;
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+
+        async function handleAiFileSelect(event) {
+            const files = Array.from(event.target.files || []);
+            if (!files.length) return;
+            
+            const spinner = document.getElementById('ai_status_spinner');
+            spinner.textContent = '⏳ Preparing images...';
+            spinner.style.display = 'inline-block';
+
+            try {
+                for (const file of files) {
+                    if (!file.type.startsWith('image/')) continue;
+                    const resized = await resizeImage(file);
+                    uploadedAiImages.push(resized);
+                }
+                renderAiThumbnails();
+            } catch (err) {
+                console.error('Image processing error:', err);
+                alert('Could not process image: ' + err);
+            } finally {
+                spinner.style.display = 'none';
+                event.target.value = '';
+            }
+        }
+
+        function removeAiImage(index) {
+            uploadedAiImages.splice(index, 1);
+            renderAiThumbnails();
+        }
+
+        function renderAiThumbnails() {
+            const container = document.getElementById('ai_thumbnail_container');
+            if (uploadedAiImages.length === 0) {
+                container.innerHTML = '<div style="font-size:0.85rem; color:#94a3b8; font-style:italic;">No pictures selected yet</div>';
+                return;
+            }
+            container.innerHTML = uploadedAiImages.map((img, i) => `
+                <div style="position: relative; display: inline-block; border-radius: 6px; overflow: hidden; border: 2px solid #cbd5e1;">
+                    <img src="${img.data}" alt="${img.name}" style="width: 80px; height: 80px; object-fit: cover; display: block;">
+                    <button type="button" onclick="removeAiImage(${i})" style="position: absolute; top: 2px; right: 2px; background: rgba(239,68,68,0.9); color: white; border: none; border-radius: 50%; width: 22px; height: 22px; font-size: 11px; cursor: pointer; display: flex; align-items: center; justify-content: center;">✕</button>
+                    <div style="position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.6); color: white; font-size: 10px; padding: 1px 4px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">#${i+1}</div>
+                </div>
+            `).join('');
+        }
+
+        async function analyzeSlipWithAi(additionalInstruction = '') {
+            const promptInput = document.getElementById('ai_prompt_text');
+            let promptText = (promptInput ? promptInput.value : '').trim();
+            if (additionalInstruction) {
+                promptText = promptText ? `${promptText}\nCorrection/Follow-up: ${additionalInstruction}` : additionalInstruction;
+                promptInput.value = promptText;
+            }
+
+            if (uploadedAiImages.length === 0 && !promptText) {
+                alert('Please take or upload at least one picture of the rough slip/card, or type a note.');
+                return;
+            }
+
+            const apiKey = (localStorage.getItem('gemini_api_key') || '').trim();
+            const btn = document.getElementById('btn_analyze_slip');
+            const spinner = document.getElementById('ai_status_spinner');
+            btn.disabled = true;
+            spinner.textContent = '⏳ Analyzing images with Gemini Flash... Please wait.';
+            spinner.style.display = 'inline-block';
+
+            try {
+                const response = await fetch('/api/ai/parse-bill', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Gemini-Key': apiKey
+                    },
+                    body: JSON.stringify({
+                        images: uploadedAiImages,
+                        prompt: promptText
+                    })
+                });
+
+                const result = await response.json();
+                if (!response.ok || !result.success) {
+                    throw new Error(result.error || 'Failed to analyze bill.');
+                }
+
+                lastExtractedAiData = result.data;
+                renderAiResultCard(result.data);
+
+            } catch (err) {
+                console.error('AI Error:', err);
+                alert('Error reading bill: ' + err.message);
+            } finally {
+                btn.disabled = false;
+                spinner.style.display = 'none';
+            }
+        }
+
+        function refineSlipWithAi() {
+            const followupInput = document.getElementById('ai_followup_input');
+            const val = followupInput ? followupInput.value.trim() : '';
+            if (!val) {
+                alert('Please type what you want to adjust (e.g. "change rate to 410").');
+                return;
+            }
+            followupInput.value = '';
+            analyzeSlipWithAi(val);
+        }
+
+        function renderAiResultCard(data) {
+            const container = document.getElementById('ai_result_container');
+            container.style.display = 'block';
+
+            // Badge
+            const badge = document.getElementById('ai_match_badge');
+            if (data.is_new_buyer) {
+                badge.textContent = '✨ New Buyer Created';
+                badge.style.background = '#dcfce7';
+                badge.style.color = '#15803d';
+            } else if (data.matched_profile_id) {
+                badge.textContent = '✓ Matched Existing Profile';
+                badge.style.background = '#e0e7ff';
+                badge.style.color = '#3730a3';
+            } else {
+                badge.textContent = 'Party Detected';
+                badge.style.background = '#f1f5f9';
+                badge.style.color = '#475569';
+            }
+
+            // Buyer
+            document.getElementById('ai_res_buyer').textContent = data.buyer_name || 'Not Detected';
+            const addrEl = document.getElementById('ai_res_address');
+            if (Array.isArray(data.buyer_details) && data.buyer_details.length > 0) {
+                addrEl.innerHTML = data.buyer_details.map(l => `<div>${l}</div>`).join('');
+            } else {
+                addrEl.textContent = data.gstin ? `GSTIN: ${data.gstin}` : '';
+            }
+
+            // Transport & Tax
+            document.getElementById('ai_res_transport').textContent = data.transport_mode ? `🚛 ${data.transport_mode}` : '🚛 No Transport Specified';
+            document.getElementById('ai_res_tax').textContent = `📋 Tax: ${data.tax_type || 'IGST'}`;
+            const delivEl = document.getElementById('ai_res_delivery');
+            if (data.delivery_charge && Number(data.delivery_charge) > 0) {
+                delivEl.textContent = `Delivery: ₹${data.delivery_charge}`;
+            } else {
+                delivEl.textContent = '';
+            }
+
+            // Items
+            const itemsBody = document.getElementById('ai_res_items_body');
+            const items = data.items || [];
+            if (items.length === 0) {
+                itemsBody.innerHTML = '<tr><td colspan="5" style="padding:10px; text-align:center; color:#94a3b8;">No items detected</td></tr>';
+            } else {
+                itemsBody.innerHTML = items.map((it, idx) => {
+                    const q = parseFloat(it.quantity) || 0;
+                    const r = parseFloat(it.rate) || 0;
+                    const amt = q * r;
+                    const d = it.description || 'Aluminium Utensils';
+                    const cleanD = d.replace(/^\d+\.\s*/, '').trim();
+                    return `<tr style="border-bottom: 1px solid #f1f5f9;">
+                        <td style="padding: 8px 12px; font-weight: 500;">${idx + 1}. ${cleanD}</td>
+                        <td style="padding: 8px 12px;">${it.bags || '-'}</td>
+                        <td style="padding: 8px 12px;">${q.toFixed(3)}</td>
+                        <td style="padding: 8px 12px;">₹${r.toFixed(2)}</td>
+                        <td style="padding: 8px 12px; text-align: right; font-weight: 600;">₹${amt.toFixed(2)}</td>
+                    </tr>`;
+                }).join('');
+            }
+
+            // Scroll result into view
+            container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        function applyAiDataToForm() {
+            if (!lastExtractedAiData) return;
+            const data = lastExtractedAiData;
+
+            // 1. Buyer Profile
+            if (data.created_profile) {
+                // If AI created a new profile, append to buyerProfiles if not already there
+                const exists = buyerProfiles.some(p => p.profile_id === data.created_profile.profile_id);
+                if (!exists) {
+                    buyerProfiles.push(data.created_profile);
+                }
+                selectBuyer(data.created_profile.profile_id);
+            } else if (data.matched_profile_id) {
+                selectBuyer(data.matched_profile_id);
+            } else if (data.buyer_name) {
+                // Fuzzy match against existing buyer profiles
+                const normalized = normalizeName(data.buyer_name);
+                const matched = buyerProfiles.find(p => normalizeName(p.buyer_name).includes(normalized) || normalized.includes(normalizeName(p.buyer_name)));
+                if (matched) {
+                    selectBuyer(matched.profile_id);
+                }
+            }
+
+            // 2. Transport Mode
+            if (data.transport_mode) {
+                transportInput.value = normalizeTransportCore(data.transport_mode);
+            }
+
+            // 3. Delivery Charge
+            if (data.delivery_charge !== undefined) {
+                deliveryInput.value = parseFloat(data.delivery_charge) || 0;
+            }
+
+            // 4. Tax Type
+            if (data.tax_type) {
+                const isCgst = (data.tax_type === 'CGST_SGST');
+                const radio = document.querySelector(`input[name="tax_type_override"][value="${isCgst ? 'CGST_SGST' : 'IGST'}"]`);
+                if (radio) {
+                    radio.checked = true;
+                    syncCustomTaxFields();
+                }
+            }
+
+            // 5. E-Waybill (if present)
+            if (data.ewaybill_number && ewaybillNumberInput) {
+                ewaybillNumberInput.value = data.ewaybill_number;
+                if (ewaybillDateInput) {
+                    ewaybillDateInput.value = data.ewaybill_date ? formatToYyyyMmDd(data.ewaybill_date) : invoiceDateInput.value;
+                }
+            }
+
+            // 6. Items
+            const items = data.items || [];
+            if (items.length > 0) {
+                itemsContainer.innerHTML = '';
+                itemCounter = 0;
+                items.forEach(it => addItemRow(it));
+                renumberItemRows();
+            }
+
+            // Update preview and close modal
+            updatePreview();
+            closeAiModal();
+
+            // Friendly alert for Dad
+            setTimeout(() => {
+                alert('✓ Form successfully populated with details from your slip!\n\nYou can now review or change any fields on screen. Click "Generate Invoice" when you are satisfied.');
+            }, 250);
+        }
         
         // ================= PRELOAD INVOICE IF PROVIDED =================
         function preloadInvoiceData() {
