@@ -18,12 +18,12 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     # Business Identity
     "company_name": "Shakambhari Enterprises",
     "company_subtitle": "Aluminium Utensils Manufacturing & Trading",
-    "company_address": "54/5A, Strand Road, Jorabagan, Kolkata - 700006",
-    "company_gstin": "19ACZPN5725A1Z8",
+    "company_address": "123, Sample Industrial Area, Kolkata - 700001, West Bengal",
+    "company_gstin": "19AAAAA0000A1Z5",
     "company_state": "West Bengal",
     "company_state_code": "19",
     "company_phone": "",
-    "company_dispatch_address": "129, Girish Ghosh Road, Belur, Howrah - 711202",
+    "company_dispatch_address": "Plot No. 45, Warehouse Complex, Howrah - 711101, West Bengal",
 
     # Invoice Numbering & Formatting
     "invoice_prefix": "",

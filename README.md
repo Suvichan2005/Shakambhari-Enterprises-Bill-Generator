@@ -89,7 +89,7 @@ flowchart TD
 - **GST Calculations:** Automatic calculation of taxable value, IGST (inter-state 12%) vs CGST+SGST (intra-state 6% + 6%), delivery charges, and round-off to the nearest rupee.
 - **Sequential Numbering:** Tracks existing invoices in Google Sheets and GCS to suggest the next sequential invoice number for the active financial year (e.g. `62/2026-27`).
 - **E-Waybill Support:** Optional E-waybill number and date fields, with auto-sync to invoice date.
-- **Dispatch Warehouse Flexibility:** Alternate dispatch address selection (e.g., warehouse in Belur vs registered office in Strand Road).
+- **Dispatch Warehouse Flexibility:** Alternate dispatch address selection (e.g., regional warehouse vs registered corporate office address).
 - **Buyer Directory:** Auto-complete search across saved buyers with 1-click loading of GSTIN, address, and state code.
 - **Dynamic Settings UI:** In-app modal (`⚙️`) to update business name, address, GSTIN, default HSN, default delivery charges, and AI preferences without touching code.
 

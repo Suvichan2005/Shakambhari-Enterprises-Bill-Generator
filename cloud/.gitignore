@@ -1,13 +1,26 @@
-# Ignore service account keys (NEVER commit these!)
+# Ignore service account keys & credentials
 service-account.json
+*.key
+cookies.txt
+app_settings.json
+
+# Ignore data JSONs
 *.json
 !package.json
 !static/manifest.json
 
+# Personal & Confidential Signatures
+*signature*
+*sig*
+*.sig
+
+# Spreadsheets
+*.xlsx
+*.xls
+
 # Environment files
 .env
-.env.local
-.env.production
+.env.*
 
 # Python
 __pycache__/
@@ -18,21 +31,16 @@ __pycache__/
 venv/
 env/
 .venv/
+*backup*.py
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Temporary files
+# Temporary & Logs
 *.tmp
 *.temp
 /tmp/
-
-# Logs
 *.log
+
+# OS & IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

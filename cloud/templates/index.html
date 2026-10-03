@@ -1943,7 +1943,7 @@
                 <div class="slip-top-band">
                     <div>
                         <div class="slip-firm-name">{{ app_settings.company_name if app_settings else 'Shakambhari Enterprises' }}</div>
-                        <div class="slip-firm-sub">{{ app_settings.company_address if app_settings else 'Kolkata' }} • GSTIN: {{ app_settings.company_gstin if app_settings else '19ACZPN5725A1Z8' }}</div>
+                        <div class="slip-firm-sub">{{ app_settings.company_address if app_settings else 'Kolkata' }} • GSTIN: {{ app_settings.company_gstin if app_settings else '19AAAAA0000A1Z5' }}</div>
                     </div>
                     <div class="slip-tax-invoice-badge">Tax Invoice</div>
                 </div>
@@ -2256,7 +2256,7 @@
                             <div class="grid-2">
                                 <div class="field-group">
                                     <label class="field-label" for="cfg_company_gstin">Company GSTIN</label>
-                                    <input type="text" id="cfg_company_gstin" class="field-input mono" value="{{ app_settings.company_gstin if app_settings else '19ACZPN5725A1Z8' }}">
+                                    <input type="text" id="cfg_company_gstin" class="field-input mono" value="{{ app_settings.company_gstin if app_settings else '19AAAAA0000A1Z5' }}">
                                 </div>
                                 <div class="field-group">
                                     <label class="field-label" for="cfg_company_phone">Phone / WhatsApp</label>
@@ -2265,7 +2265,7 @@
                             </div>
                             <div class="field-group">
                                 <label class="field-label" for="cfg_company_address">Registered Office Address</label>
-                                <textarea id="cfg_company_address" class="field-textarea" rows="2">{{ app_settings.company_address if app_settings else '54/5A, Strand Road, Jorabagan, Kolkata - 700006' }}</textarea>
+                                <textarea id="cfg_company_address" class="field-textarea" rows="2">{{ app_settings.company_address if app_settings else '123, Sample Industrial Area, Kolkata - 700001, West Bengal' }}</textarea>
                             </div>
                             <div class="grid-2">
                                 <div class="field-group">
@@ -2288,7 +2288,7 @@
                         <div class="form-grid">
                             <div class="field-group">
                                 <label class="field-label" for="cfg_company_dispatch">Default Dispatch Origin (Warehouse)</label>
-                                <textarea id="cfg_company_dispatch" class="field-textarea" rows="2" placeholder="e.g. 129, Girish Ghosh Road, Belur, Howrah - 711202">{{ app_settings.company_dispatch_address if app_settings else '129, Girish Ghosh Road, Belur, Howrah - 711202' }}</textarea>
+                                <textarea id="cfg_company_dispatch" class="field-textarea" rows="2" placeholder="e.g. Plot No. 45, Warehouse Complex, Howrah - 711101">{{ app_settings.company_dispatch_address if app_settings else 'Plot No. 45, Warehouse Complex, Howrah - 711101, West Bengal' }}</textarea>
                             </div>
                             <div class="grid-2">
                                 <div class="field-group">

@@ -1,46 +1,59 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
-*.class
+*$py.class
+*.so
 
-# Environment
+# Environment & Virtual Environments
 .env
-.venv
+.env.*
+.venv/
 env/
 venv/
 ENV/
-env.bak/
-venv.bak/
 
-# Project Specific Data to protect
+# Sensitive Business Data (Ledgers, Profiles, Carriers)
 buyer_profiles.json
 transport_modes.json
 _backups/
 logs/
 *.log
 
-# Spreadsheets & outputs
+# Personal & Confidential Signatures (NEVER COMMIT)
+*signature*
+*sig*
+*.sig
+scratch*
+
+# Sessions, Cookies & Credentials
+cookies.txt
+*/cookies.txt
+service-account.json
+*/service-account.json
+*.key
+.firebase/
+app_settings.json
+*/app_settings.json
+
+# Scratch & Temporary Scripts
+inspect_*.py
+generate_test*.py
+extract_invoice_data*.py
+*backup*.py
+
+# Spreadsheets & Generated Bills (Only allow whitewashed sample template)
 *.xlsx
-# Exception for templates if you need them: !templates/*.xlsx
+*.xls
+!sample_invoice_template.xlsx
 Generated_Invoices/
 Generated_Invoices_PDF/
 GST Invoices/
 Ewaybills/
 2024-25/
-
-# Cloud and Local deployment credentials
-service-account.json
-cloud/service-account.json
-cloud/*.key
-*.key
+2025-26/
+2026-27/
 
 # OS generated files
 .DS_Store
 Thumbs.db
-
-# Secrets, Session files & Local settings
-cookies.txt
-.firebase/
-app_settings.json
-cloud/app_settings.json
-
+desktop.ini

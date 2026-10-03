@@ -246,9 +246,8 @@ class GoogleSheetsDB:
     
     DISPATCH_HEADERS = ['address', 'created_at']
     DEFAULT_DISPATCH_ADDRESSES = [
-        "Hari Om Metal Works\n105, Dharamtala Road, Liluah\nHowrah - 711204, WB (19)\nGSTIN : 19ACZPN5725A1Z8",
-        "235/18, Mirpara Road\nLiluah\nHOWRAH - 711203, WB (19)",
-        "62F, J. N. MUKHERJEE ROAD\nGHUSURI\nHOWRAH - 711107, WB (19)"
+        "Warehouse Unit 1\nPlot 12, Industrial Estate\nHowrah - 711101, WB (19)",
+        "Factory Godown\n45, Phase II Logistics Park\nKolkata - 700001, WB (19)"
     ]
 
     def get_all_dispatch_addresses(self) -> List[str]:

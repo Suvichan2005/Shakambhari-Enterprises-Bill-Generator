@@ -151,10 +151,9 @@
             <tr>
                 <td class="seller">
                     <div class="line"><span class="label">Seller :</span></div>
-                    <div class="line">M/S Shakambhari Enterprises</div>
-                    <div class="line">Om Bhawan, 144/145 J.N Mukherjee Road, Ghusuri</div>
-                    <div class="line">Near Rajesh Weight Bridge</div>
-                    <div class="line">G.S.T No : 19ACZPN5725A1Z8</div>
+                    <div class="line">{{ app_settings.company_name if app_settings else 'Shakambhari Enterprises' }}</div>
+                    <div class="line">{{ app_settings.company_address if app_settings else '123, Sample Industrial Area, Kolkata - 700001' }}</div>
+                    <div class="line">G.S.T No : {{ app_settings.company_gstin if app_settings else '19AAAAA0000A1Z5' }}</div>
                 </td>
                 <td class="invoice-no">
                     <div class="line"><span class="label">INVOICE No.</span> {{ invoice.invoice_number }}</div>
