@@ -92,6 +92,30 @@ def check_ignore_rules() -> list[str]:
     return issues
 
 
+def check_gcs_template() -> list[str]:
+    issues = []
+    try:
+        from google.cloud import storage
+        client = storage.Client()
+        bucket_name = 'shakambhari-invoices-bucket'
+        
+        if not bucket_name or bucket_name == 'YOUR_BUCKET_NAME_HERE':
+            return ["Could not determine GCS_BUCKET_NAME or it is a placeholder. Skipping template verification."]
+            
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob("templates/invoice_template_2026_27.xlsx")
+        
+        if not blob.exists():
+            issues.append(f"CRITICAL: Missing canonical template in GCS at gs://{bucket_name}/templates/invoice_template_2026_27.xlsx")
+            issues.append("Please upload cloud/invoice_template_2026_27.xlsx to GCS before deploying.")
+    except ImportError:
+        return ["google-cloud-storage not installed, skipping GCS template verification."]
+    except Exception as e:
+        return [f"Failed to check GCS for template: {e}"]
+        
+    return issues
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run cloud pre-deployment checks")
     parser.add_argument(
@@ -108,6 +132,7 @@ def main() -> int:
     all_issues.extend(app_yaml_issues)
     all_warnings.extend(app_yaml_warnings)
     all_issues.extend(check_ignore_rules())
+    all_issues.extend(check_gcs_template())
 
     if all_issues:
         print("Preflight FAILED with the following issues:\n")

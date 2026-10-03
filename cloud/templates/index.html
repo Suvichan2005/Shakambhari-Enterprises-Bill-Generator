@@ -381,6 +381,8 @@
         .preview-panel {
             position: sticky;
             top: 20px;
+            max-height: calc(100vh - 40px);
+            overflow-y: auto;
         }
         
         .preview-section {
@@ -825,6 +827,7 @@
         {% endwith %}
         
         <div class="toolbar">
+            <button type="button" class="btn-primary" onclick="openAiModal()" style="background: linear-gradient(135deg, #4f46e5, #7c3aed); border: none; font-weight: 600; box-shadow: 0 2px 6px rgba(79,70,229,0.3); font-size: 0.95rem; padding: 9px 16px;">📷 AI Assistant (Scan Slips / Cards)</button>
             <a href="{{ url_for('list_profiles') }}" class="btn-success">👤 Manage Buyer Profiles</a>
             <a href="{{ url_for('manage_profile') }}" class="btn-primary">➕ Add New Buyer</a>
             <button type="button" class="btn-secondary" onclick="toggleLoadPanel()">📂 Old Entries + Files</button>
@@ -851,9 +854,38 @@
                         </div>
                     </div>
                     
+                    <!-- Dispatch / Ship From Address (Factory / Warehouse) -->
+                    <div class="form-section">
+                        <h2>📦 Dispatch / Ship From (Optional)</h2>
+                        <div class="form-group" style="margin-bottom:0;">
+                            <label class="checkbox-container" style="font-size:1.05rem; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:10px;">
+                                <input type="checkbox" id="ship_from_enabled" name="ship_from_enabled" onchange="toggleShipFromSection()" style="width:20px; height:20px; cursor:pointer;">
+                                <span>Dispatch From</span>
+                            </label>
+                            <p class="hint" style="margin-left:30px; margin-top:4px;">Leave unchecked for standard company dispatch (default). Check to specify factory or alternate warehouse dispatch.</p>
+                            
+                            <div id="ship_from_section" style="display:none; margin-top:12px; margin-left:30px;">
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
+                                    <label for="ship_from_preset" style="font-weight:700; margin-bottom:0; font-size:0.95rem;">Select Past Dispatch Address:</label>
+                                    <button type="button" class="btn-secondary" onclick="clearShipFrom()" style="font-size:0.85rem; padding:4px 10px; border-radius:6px; cursor:pointer;">Clear</button>
+                                </div>
+                                <div style="margin-bottom: 10px;">
+                                    <select id="ship_from_preset" onchange="selectPastDispatch(this.value)" style="width: 100%; padding: 10px 12px; font-size: 0.95rem; border: 1px solid var(--gray-300); border-radius: 8px; background: #fff; cursor:pointer;">
+                                        <option value="">-- Choose from past dispatch addresses --</option>
+                                        {% for addr in dispatch_addresses %}
+                                        <option value="{{ addr }}">{{ addr.split('\n')[0] }} ({{ addr.split('\n')[1] if addr.split('\n')|length > 1 else '' }})</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <label for="ship_from" style="font-weight:600; margin-bottom:4px; font-size:0.9rem; color:var(--gray-700);">Address Text (Editable):</label>
+                                <textarea name="ship_from" id="ship_from" rows="3" placeholder="Select from above or type fresh warehouse/factory address here..."></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    
                     <!-- Invoice Info -->
                     <div class="form-section">
-                        <h2>📄 Invoice Information</h2>
+                        <h2>📄 Invoice & E-Waybill Information</h2>
                         <div class="form-row">
                             <div class="form-group">
                                 <label for="invoice_number">Invoice Number:</label>
@@ -862,6 +894,17 @@
                             <div class="form-group">
                                 <label for="invoice_date">Invoice Date:</label>
                                 <input type="date" name="invoice_date" id="invoice_date" value="{{ today_date }}" required>
+                            </div>
+                        </div>
+                        <div class="form-row" style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--gray-300);">
+                            <div class="form-group">
+                                <label for="ewaybill_number">E-Waybill No. (Optional):</label>
+                                <input type="text" name="ewaybill_number" id="ewaybill_number" placeholder="e.g. 801722811110">
+                                <p class="hint">Leave blank if not generated yet.</p>
+                            </div>
+                            <div class="form-group">
+                                <label for="ewaybill_date">E-Waybill Date (Optional):</label>
+                                <input type="date" name="ewaybill_date" id="ewaybill_date" value="">
                             </div>
                         </div>
                     </div>
@@ -939,8 +982,10 @@
                             </div>
                         </div>
                     </div>
-                    
-                    <button type="submit" class="submit-btn">🧾 Generate Invoice</button>
+
+                    <input type="hidden" name="digitally_signed" value="1">
+
+                    <button type="submit" id="generate_btn" class="submit-btn" style="padding: 18px; font-size: 1.35rem; font-weight: 700; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,123,255,0.35);">🧾 Generate GST Invoice</button>
                 </form>
                 
                 <!-- Load Old Invoice Panel - Removed, using Modal now -->
@@ -964,6 +1009,21 @@
                         <strong id="preview_buyer_name">-</strong>
                         <div id="preview_buyer_details" class="preview-buyer-details"></div>
                     </div>
+                </div>
+
+                <div class="preview-section" id="preview_ewaybill_section" style="display: none;">
+                    <div class="preview-label">E-Waybill</div>
+                    <div class="preview-value" id="preview_ewaybill" style="font-size:0.85rem; color:#444;">-</div>
+                </div>
+
+                <div class="preview-section">
+                    <div class="preview-label">Ship To (Destination)</div>
+                    <div class="preview-value" id="preview_ship_to" style="font-size:0.85rem; color:#444;">-</div>
+                </div>
+
+                <div class="preview-section" id="preview_ship_from_section" style="display: none;">
+                    <div class="preview-label">Ship From (Dispatch)</div>
+                    <div class="preview-value" id="preview_ship_from" style="font-size:0.85rem; color:#444;">-</div>
                 </div>
                 
                 <div class="preview-section">
@@ -1021,6 +1081,14 @@
                         </tr>
                     </table>
                     <div class="amount-words" id="preview_words">Zero Only</div>
+                    
+                    <div class="preview-signature-block" style="margin-top: 18px; padding-top: 12px; border-top: 1px dashed #cbd5e1; text-align: right;">
+                        <div style="font-weight: 600; font-size: 0.88rem; color: #1e293b;">For Shakambhari Enterprises</div>
+                        <div style="margin: 8px 0;">
+                            <img src="/static/signature.png" alt="Signature" style="max-height: 48px; object-fit: contain;" onerror="this.style.display='none'">
+                        </div>
+                        <div style="font-size: 0.85rem; color: #475569; font-weight: 500;">Authorised Signatory</div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1070,9 +1138,17 @@
         // Data from server
         const buyerProfiles = {{ buyer_profiles|tojson|safe }};
         const transportModes = {{ transport_modes|tojson|safe }};
-        const recentInvoices = {{ recent_invoices|tojson|safe if recent_invoices else '[]'|safe }};
+        let recentInvoices = {{ recent_invoices|tojson|safe if recent_invoices else '[]'|safe }};
         const preloadInvoice = {{ preload_invoice|tojson|safe if preload_invoice else 'null'|safe }};
         const openRecordsOnLoad = {{ 'true' if open_records else 'false' }};
+
+        function cleanAddressLines(lines) {
+            if (!Array.isArray(lines)) return [];
+            return lines.filter(l => {
+                const s = String(l || '').trim();
+                return s && !/^(buyer|ship\s*to)\s*:\s*$/i.test(s);
+            }).map(l => String(l || '').trim().replace(/^(buyer|ship\s*to)\s*:\s*/i, ''));
+        }
         
         // DOM elements
         const buyerSearchInput = document.getElementById('buyer_profile_search');
@@ -1087,6 +1163,12 @@
         const taxRateIgstInput = document.getElementById('tax_rate_igst');
         const taxRateCgstInput = document.getElementById('tax_rate_cgst');
         const taxRateSgstInput = document.getElementById('tax_rate_sgst');
+        
+        const ewaybillNumberInput = document.getElementById('ewaybill_number');
+        const ewaybillDateInput = document.getElementById('ewaybill_date');
+        const shipFromCheckbox = document.getElementById('ship_from_enabled');
+        const shipFromSection = document.getElementById('ship_from_section');
+        const shipFromTextarea = document.getElementById('ship_from');
         
         const itemsContainer = document.getElementById('items_container');
         let itemCounter = 0;
@@ -1207,6 +1289,35 @@
                 document.getElementById('profile_tax_indicator').textContent = profile.default_tax_type || 'IGST';
             }
             hideBuyerDropdown();
+            updatePreview();
+        }
+
+        function toggleShipFromSection() {
+            if (shipFromCheckbox && shipFromSection) {
+                const isChecked = shipFromCheckbox.checked;
+                shipFromSection.style.display = isChecked ? 'block' : 'none';
+                if (!isChecked && shipFromTextarea) {
+                    shipFromTextarea.value = '';
+                }
+                updatePreview();
+            }
+        }
+
+        function selectPastDispatch(addr) {
+            if (shipFromTextarea) {
+                if (addr) {
+                    shipFromTextarea.value = addr;
+                }
+                updatePreview();
+            }
+        }
+
+        function clearShipFrom() {
+            if (shipFromTextarea) {
+                shipFromTextarea.value = '';
+            }
+            const preset = document.getElementById('ship_from_preset');
+            if (preset) preset.value = '';
             updatePreview();
         }
         
@@ -1514,11 +1625,53 @@
             
             if (profile) {
                 document.getElementById('preview_buyer_name').textContent = profile.buyer_name;
+                const cleanedBuyer = cleanAddressLines(profile.buyer_details || []);
                 document.getElementById('preview_buyer_details').innerHTML = 
-                    (profile.buyer_details || []).map(d => `<div>${d}</div>`).join('');
+                    cleanedBuyer.map(d => `<div>${d}</div>`).join('');
             } else {
                 document.getElementById('preview_buyer_name').textContent = '-';
                 document.getElementById('preview_buyer_details').innerHTML = '';
+            }
+
+            // E-Waybill Preview (Always visible with headers)
+            const ewNum = (ewaybillNumberInput ? ewaybillNumberInput.value : '').trim();
+            const ewDate = (ewaybillDateInput ? ewaybillDateInput.value : '').trim();
+            const ewSec = document.getElementById('preview_ewaybill_section');
+            const ewVal = document.getElementById('preview_ewaybill');
+            if (ewSec && ewVal) {
+                ewSec.style.display = 'block';
+                let dateDisplay = '-';
+                if (ewDate) {
+                    const parts = ewDate.split('-');
+                    dateDisplay = (parts.length === 3) ? `${parts[2]}/${parts[1]}/${parts[0]}` : ewDate;
+                }
+                ewVal.textContent = `Ewaybill No. ${ewNum ? ewNum : '-'} | Date : ${dateDisplay}`;
+            }
+
+            // Ship To Preview (Always synced with selected buyer profile, cleaned of redundant headers)
+            const prevShipTo = document.getElementById('preview_ship_to');
+            if (prevShipTo) {
+                if (profile && profile.buyer_details && profile.buyer_details.length > 0) {
+                    const cleanedShipTo = cleanAddressLines(profile.buyer_details);
+                    prevShipTo.innerHTML = cleanedShipTo.map(d => `<div>${d}</div>`).join('');
+                } else {
+                    prevShipTo.textContent = '-';
+                }
+            }
+
+            // Ship From Preview
+            const isShipFrom = shipFromCheckbox && shipFromCheckbox.checked;
+            const shipFromText = (shipFromTextarea ? shipFromTextarea.value : '').trim();
+            const prevShipFromSec = document.getElementById('preview_ship_from_section');
+            const prevShipFrom = document.getElementById('preview_ship_from');
+            if (prevShipFromSec && prevShipFrom) {
+                if (isShipFrom && shipFromText) {
+                    prevShipFromSec.style.display = 'block';
+                    prevShipFrom.innerHTML = shipFromText.split('\n').filter(l => l.trim()).map(l => `<div>${l.trim()}</div>`).join('');
+                } else {
+                    prevShipFromSec.style.display = 'none';
+                    prevShipFrom.textContent = '-';
+                }
             }
             
             // Transport
@@ -1612,9 +1765,30 @@
             }
         }
         
-        // Event listeners for invoice info
+        // Event listeners for invoice info and details
         document.getElementById('invoice_number').addEventListener('input', updatePreview);
-        document.getElementById('invoice_date').addEventListener('change', updatePreview);
+        const invoiceDateInput = document.getElementById('invoice_date');
+        let ewaybillDateManuallyEdited = false;
+        if (ewaybillDateInput) {
+            ewaybillDateInput.addEventListener('input', () => {
+                ewaybillDateManuallyEdited = true;
+            });
+            ewaybillDateInput.addEventListener('change', updatePreview);
+        }
+        invoiceDateInput.addEventListener('input', () => {
+            if (!ewaybillDateManuallyEdited && ewaybillDateInput) {
+                ewaybillDateInput.value = invoiceDateInput.value;
+            }
+            updatePreview();
+        });
+        invoiceDateInput.addEventListener('change', () => {
+            if (!ewaybillDateManuallyEdited && ewaybillDateInput) {
+                ewaybillDateInput.value = invoiceDateInput.value;
+            }
+            updatePreview();
+        });
+        if (ewaybillNumberInput) ewaybillNumberInput.addEventListener('input', updatePreview);
+        if (shipFromTextarea) shipFromTextarea.addEventListener('input', updatePreview);
         deliveryInput.addEventListener('input', updatePreview);
         
         // ================= LOAD OLD INVOICE MODAL =================
@@ -1624,13 +1798,27 @@
             openInvoiceModal();
         }
         
-        function openInvoiceModal() {
+        async function openInvoiceModal() {
             const modal = document.getElementById('invoice_modal');
             modal.style.display = 'flex';
             document.getElementById('modal_invoice_search').value = '';
             document.getElementById('modal_sort').value = 'date_desc';
             filterAndSortInvoices();
             document.getElementById('modal_invoice_search').focus();
+
+            try {
+                const resp = await fetch('/api/invoices');
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.success && Array.isArray(data.invoices)) {
+                        recentInvoices = data.invoices;
+                        invoiceListData = [...recentInvoices];
+                        filterAndSortInvoices();
+                    }
+                }
+            } catch (err) {
+                console.warn('Could not auto-refresh invoice list:', err);
+            }
         }
         
         function closeInvoiceModal() {
@@ -1712,7 +1900,7 @@
                     </div>
                     <div class="inv-actions">
                         <button type="button" class="btn-load-edit" ${(inv.invoice_number || inv.filename) ? '' : 'disabled'} onclick="loadInvoice('${(inv.invoice_number || '').replace(/'/g, "\\'")}', '${(inv.filename || '').replace(/'/g, "\\'")}', false)">✏️ Load & Edit</button>
-                        <button type="button" class="btn-duplicate" ${(inv.invoice_number || inv.filename) ? '' : 'disabled'} onclick="loadInvoice('${(inv.invoice_number || '').replace(/'/g, "\\'")}', '${(inv.filename || '').replace(/'/g, "\\'")}', true)">📋 Create Duplicate</button>
+                        <button type="button" class="btn-duplicate" ${(inv.invoice_number || inv.filename) ? '' : 'disabled'} onclick="loadInvoice('${(inv.invoice_number || '').replace(/'/g, "\\'")}', '${(inv.filename || '').replace(/'/g, "\\'")}', true)">📋 Copy to New Bill</button>
                         <button type="button" class="btn-download-small" ${inv.filename ? '' : 'disabled'} onclick="downloadInvoice('${(inv.filename || '').replace(/'/g, "\\'")}', 'xlsx')">📥 XLSX</button>
                         <button type="button" class="btn-download-small" ${inv.pdf_filename ? '' : 'disabled'} onclick="downloadInvoice('${(inv.pdf_filename || '').replace(/'/g, "\\'")}', 'pdf')">📥 PDF</button>
                     </div>
@@ -1729,6 +1917,107 @@
             }
         }
         
+        function formatToYyyyMmDd(val) {
+            if (!val) return '';
+            val = String(val).trim();
+            if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+            const m = val.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+            if (m) {
+                const day = m[1].padStart(2, '0');
+                const month = m[2].padStart(2, '0');
+                let year = m[3];
+                if (year.length === 2) year = '20' + year;
+                return `${year}-${month}-${day}`;
+            }
+            const d = new Date(val);
+            if (!isNaN(d.getTime())) {
+                const yyyy = d.getFullYear();
+                const mm = String(d.getMonth() + 1).padStart(2, '0');
+                const dd = String(d.getDate()).padStart(2, '0');
+                return `${yyyy}-${mm}-${dd}`;
+            }
+            return val;
+        }
+
+        // ================= UNIFIED FORM POPULATION =================
+        function populateFormFromInvoice(data, isDuplicate = false) {
+            if (!data) return;
+
+            // 1. Invoice Number & Date
+            const invNumEl = document.getElementById('invoice_number');
+            const invDateEl = document.getElementById('invoice_date');
+            if (isDuplicate) {
+                invNumEl.value = '{{ suggested_invoice_number }}';
+                const today = new Date();
+                const yyyy = today.getFullYear();
+                const mm = String(today.getMonth() + 1).padStart(2, '0');
+                const dd = String(today.getDate()).padStart(2, '0');
+                invDateEl.value = `${yyyy}-${mm}-${dd}`;
+                if (ewaybillNumberInput) ewaybillNumberInput.value = '';
+                if (ewaybillDateInput) ewaybillDateInput.value = invDateEl.value;
+                ewaybillDateManuallyEdited = false;
+            } else {
+                invNumEl.value = data.invoice_number || '';
+                invDateEl.value = formatToYyyyMmDd(data.invoice_date);
+                if (ewaybillNumberInput) ewaybillNumberInput.value = data.ewaybill_number || '';
+                if (data.ewaybill_date) {
+                    if (ewaybillDateInput) ewaybillDateInput.value = formatToYyyyMmDd(data.ewaybill_date);
+                    ewaybillDateManuallyEdited = true;
+                } else {
+                    if (ewaybillDateInput) ewaybillDateInput.value = invDateEl.value;
+                    ewaybillDateManuallyEdited = false;
+                }
+            }
+
+            // 2. Transport & Delivery Charge
+            if (transportInput) {
+                transportInput.value = normalizeTransportCore(data.transport_mode || '');
+            }
+            if (deliveryInput) {
+                deliveryInput.value = parseFloat(data.delivery_charge) || 0;
+            }
+
+            // 3. Buyer matching
+            const matchedProfile = findMatchingBuyerProfile(data);
+            if (matchedProfile) {
+                selectBuyer(matchedProfile.profile_id);
+            }
+
+            // 4. Ship From Address (Dispatch Origin - Optional)
+            if (shipFromCheckbox && shipFromSection && shipFromTextarea) {
+                const hasShipFrom = data.ship_from_details && data.ship_from_details.length > 0;
+                shipFromCheckbox.checked = !!hasShipFrom;
+                shipFromSection.style.display = hasShipFrom ? 'block' : 'none';
+                const preset = document.getElementById('ship_from_preset');
+                if (hasShipFrom) {
+                    const addrStr = Array.isArray(data.ship_from_details) ? data.ship_from_details.join('\n') : String(data.ship_from_details).trim();
+                    shipFromTextarea.value = addrStr;
+                    if (preset) {
+                        const matchedOpt = Array.from(preset.options).find(o => o.value.trim() === addrStr.trim());
+                        preset.value = matchedOpt ? matchedOpt.value : '';
+                    }
+                } else {
+                    shipFromTextarea.value = '';
+                    if (preset) preset.value = '';
+                }
+            }
+
+            // 6. Tax Mode & Rates
+            applyTaxModeFromData(data);
+
+            // 7. Items
+            itemsContainer.innerHTML = '';
+            itemCounter = 0;
+            const items = data.items || [];
+            if (items.length === 0) {
+                addItemRow();
+            } else {
+                items.forEach(item => addItemRow(item));
+            }
+
+            updatePreview();
+        }
+
         async function loadInvoice(invoiceNumber, filename, isDuplicate = false) {
             if (!invoiceNumber && !filename) {
                 alert('Invoice reference not available for this record.');
@@ -1746,63 +2035,25 @@
                 }
 
                 if (!response || !response.ok) {
-                    alert('Failed to load invoice data');
+                    alert('Failed to load invoice data. Please try again.');
                     return;
                 }
                 
                 const data = await response.json();
+                populateFormFromInvoice(data, isDuplicate);
                 
-                // Set invoice number and date
-                if (isDuplicate) {
-                    // For duplicates, clear invoice number and set today's date
-                    document.getElementById('invoice_number').value = '';
-                    const today = new Date();
-                    const yyyy = today.getFullYear();
-                    const mm = String(today.getMonth() + 1).padStart(2, '0');
-                    const dd = String(today.getDate()).padStart(2, '0');
-                    document.getElementById('invoice_date').value = `${yyyy}-${mm}-${dd}`;
-                } else {
-                    document.getElementById('invoice_number').value = data.invoice_number || '';
-                    document.getElementById('invoice_date').value = data.invoice_date || '';
-                }
-                
-                // Set transport
-                transportInput.value = normalizeTransportCore(data.transport_mode || '');
-                deliveryInput.value = data.delivery_charge || 0;
-                
-                // Match buyer using profile id / GSTIN / buyer name / details fallback.
-                const matchedProfile = findMatchingBuyerProfile(data);
-                
-                if (matchedProfile) {
-                    selectBuyer(matchedProfile.profile_id);
-                }
-                
-                // Set tax type and rates
-                applyTaxModeFromData(data);
-                
-                // Clear existing items and add from loaded data - reset counter
-                itemsContainer.innerHTML = '';
-                itemCounter = 0;
-                const items = data.items || [];
-                if (items.length === 0) {
-                    addItemRow();
-                } else {
-                    items.forEach(item => addItemRow(item));
-                }
-                
-                // Close modal and update preview
+                // Close modal
                 closeInvoiceModal();
-                updatePreview();
                 
                 if (isDuplicate) {
-                    alert(`Duplicate created from invoice ${data.invoice_number}. Enter a new invoice number and date.`);
+                    alert(`📋 Copied details from invoice ${data.invoice_number || filename} to a new bill. Date set to today.`);
                 } else {
-                    alert(`Invoice ${data.invoice_number} loaded. Make your edits and generate a new invoice.`);
+                    alert(`✏️ Invoice ${data.invoice_number || filename} loaded. You can make edits now.`);
                 }
                 
             } catch (e) {
                 console.error('Load error:', e);
-                alert('Error loading invoice');
+                alert('Error loading invoice: ' + e);
             }
         }
         
@@ -1815,14 +2066,26 @@
             // Reset invoice number to suggested and date to today
             document.getElementById('invoice_number').value = '{{ suggested_invoice_number }}';
             document.getElementById('invoice_date').value = '{{ today_date }}';
+            if (ewaybillNumberInput) ewaybillNumberInput.value = '';
+            if (ewaybillDateInput) ewaybillDateInput.value = '{{ today_date }}';
+            ewaybillDateManuallyEdited = false;
             
-            // Reset transport
+            // Reset transport & delivery
             transportInput.value = '';
             deliveryInput.value = 0;
             
             // Reset buyer to first profile
             if (buyerProfiles.length > 0) {
                 selectBuyer(buyerProfiles[0].profile_id);
+            }
+
+            // Reset ship from
+            if (shipFromCheckbox && shipFromSection && shipFromTextarea) {
+                shipFromCheckbox.checked = false;
+                shipFromSection.style.display = 'none';
+                shipFromTextarea.value = '';
+                const preset = document.getElementById('ship_from_preset');
+                if (preset) preset.value = '';
             }
             
             // Reset tax type to profile default
@@ -1854,39 +2117,9 @@
         // ================= PRELOAD INVOICE IF PROVIDED =================
         function preloadInvoiceData() {
             if (!preloadInvoice) return;
-            
-            const data = preloadInvoice;
-            
-            // Set invoice number and date
-            document.getElementById('invoice_number').value = data.invoice_number || '';
-            document.getElementById('invoice_date').value = data.invoice_date || '';
-            
-            // Set transport
-            transportInput.value = normalizeTransportCore(data.transport_mode || '');
-            deliveryInput.value = data.delivery_charge || 0;
-            
-            const matchedProfile = findMatchingBuyerProfile(data);
-            
-            if (matchedProfile) {
-                selectBuyer(matchedProfile.profile_id);
-            }
-            
-            // Set tax type and rates
-            applyTaxModeFromData(data);
-            
-            // Clear default items and add loaded ones - reset counter first
-            itemsContainer.innerHTML = '';
-            itemCounter = 0;
-            const items = data.items || [];
-            if (items.length === 0) {
-                addItemRow();
-            } else {
-                items.forEach(item => addItemRow(item));
-            }
-            
-            // Show notification
+            populateFormFromInvoice(preloadInvoice, false);
             setTimeout(() => {
-                alert(`Invoice ${data.invoice_number || data.filename} loaded for editing.`);
+                alert(`Invoice ${preloadInvoice.invoice_number || preloadInvoice.filename} loaded for editing.`);
             }, 300);
         }
         

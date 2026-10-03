@@ -19,7 +19,44 @@ from datetime import datetime
 import uuid
 from num2words import num2words
 from typing import Any, List, Dict, Optional
-from copy1 import copy_excel_with_formatting
+# The old helper `copy1.copy_excel_with_formatting` was removed; use the
+# cloud.app_cloud.generate_invoice_excel exporter when available.
+try:
+    from cloud.app_cloud import generate_invoice_excel, _extract_invoice_data_from_xlsx_bytes
+except Exception:
+    generate_invoice_excel = None
+
+
+def copy_excel_with_formatting(template_path: str, dest_path: str, config_data: dict):
+    """Compatibility wrapper used by existing code paths.
+    It builds a minimal invoice payload and delegates to
+    `cloud.app_cloud.generate_invoice_excel` when present, writing bytes
+    to `dest_path`.
+    """
+    if not generate_invoice_excel:
+        raise RuntimeError('Excel generation helper not available (generate_invoice_excel missing)')
+
+    invoice_payload = {
+        'invoice_number': config_data.get('invoice_number', ''),
+        'invoice_date_display': config_data.get('invoice_date', ''),
+        'buyer_details': config_data.get('buyer_details', []),
+        'transport_mode': config_data.get('mode_of_transport', ''),
+        'items': config_data.get('items', []),
+        'delivery_charge': config_data.get('delivery_charge', 0.0),
+        'tax_type': config_data.get('tax_type', 'IGST'),
+        # Optional fields that may be present elsewhere in the app
+        'ewaybill_number': config_data.get('ewaybill_number', ''),
+        'ewaybill_date_display': config_data.get('ewaybill_date_display', ''),
+        'ship_from_details': config_data.get('ship_from_details', []),
+        'ship_to_enabled': config_data.get('ship_to_enabled', False),
+        'ship_to_details': config_data.get('ship_to_details', []),
+        'digitally_signed': config_data.get('digitally_signed', False),
+        'display_tax_type': config_data.get('tax_type', 'IGST')
+    }
+
+    excel_bytes = generate_invoice_excel(invoice_payload)
+    with open(dest_path, 'wb') as f:
+        f.write(excel_bytes)
 from config import (
     BUYER_PROFILES_JSON, TRANSPORT_MODES_JSON, OUTPUT_DIR, 
     PDF_OUTPUT_DIR, TEMPLATE_EXCEL_FILE, ensure_dirs, BASE_DIR
@@ -42,7 +79,7 @@ except ImportError:
     print("WARNING: openpyxl not found. Loading old invoices will be limited.")
 
 app = Flask(__name__)
-app.secret_key = 'shakambhari-secret-key-2024-secure'
+app.secret_key = os.environ.get('FLASK_SECRET_KEY') or os.urandom(24).hex()
 ensure_dirs()
 
 BACKUP_DIR = os.path.join(BASE_DIR, "_backups")
@@ -362,114 +399,12 @@ def get_generated_invoices() -> List[Dict]:
 
 def extract_invoice_data(filepath: str) -> Optional[Dict]:
     """Extract data from an existing invoice Excel file."""
-    if not OPENPYXL_AVAILABLE:
+    if not os.path.exists(filepath):
         return None
-    
     try:
-        wb = openpyxl.load_workbook(filepath, data_only=True)
-        sheet = wb.active
-        
-        # Extract invoice number and date
-        invoice_num_raw = sheet['E2'].value or ''
-        invoice_date_raw = sheet['H2'].value or ''
-        
-        # Clean up invoice number
-        invoice_number = str(invoice_num_raw).replace('INVOICE No.', '').replace('Invoice No.', '').strip()
-        
-        # Parse date
-        invoice_date = ''
-        if invoice_date_raw:
-            date_str = str(invoice_date_raw).replace('Date :', '').replace('Date:', '').strip()
-            try:
-                dt = datetime.strptime(date_str, '%d/%m/%Y')
-                invoice_date = dt.strftime('%Y-%m-%d')
-            except ValueError:
-                try:
-                    dt = datetime.strptime(date_str, '%Y-%m-%d')
-                    invoice_date = date_str
-                except ValueError:
-                    pass
-        
-        # Extract buyer details
-        buyer_details = []
-        for i in range(8, 16):
-            cell_value = sheet[f'A{i}'].value
-            if cell_value:
-                buyer_details.append(str(cell_value).strip())
-        
-        # Extract transport mode
-        transport_mode = str(sheet['E10'].value or '').strip()
-        transport_core = extract_transport_core(transport_mode)
-
-        # Detect sheet layout for totals/tax fields.
-        new_layout = is_new_invoice_layout(sheet)
-        delivery_charge = 0.0
-        if new_layout:
-            delivery_charge = safe_float(sheet['I30'].value, 0.0)
-        
-        # Extract items
-        items = []
-        for row in range(18, 28):  # Check rows 18-27 for items
-            description = sheet[f'A{row}'].value
-            hsn_value = sheet[f'H{row}'].value
-            if hsn_value in (None, ''):
-                hsn_value = sheet[f'B{row}'].value
-            quantity = sheet[f'F{row}'].value
-            rate = sheet[f'G{row}'].value
-            
-            if description or (quantity and rate):
-                desc_str = str(description or '').strip()
-                
-                # Parse bags from description
-                bags = ''
-                base_description = desc_str
-                bags_match = re.search(r'\((\d+)\s*Bags?\)', desc_str, re.IGNORECASE)
-                if bags_match:
-                    bags = bags_match.group(1)
-                    base_description = re.sub(r'\s*\(\d+\s*Bags?\)', '', desc_str, flags=re.IGNORECASE).strip()
-                
-                items.append({
-                    'description': base_description,
-                    'bags': bags,
-                    'hsn': str(hsn_value).strip() if hsn_value is not None else '',
-                    'quantity': float(quantity) if quantity else 0,
-                    'rate': float(rate) if rate else 0
-                })
-        
-        # Detect tax type
-        tax_type = 'IGST'
-        try:
-            if new_layout:
-                igst_val = safe_float(sheet['I31'].value, 0.0)
-                cgst_rate_31 = str(sheet['E31'].value or '').strip()
-                cgst_rate_32 = str(sheet['E32'].value or '').strip()
-                cgst_val_31 = safe_float(sheet['I31'].value, 0.0)
-                cgst_val_32 = safe_float(sheet['I32'].value, 0.0)
-                if cgst_rate_31.startswith('2.50') or cgst_rate_32.startswith('2.50') or (cgst_val_31 > 0 and not cgst_rate_31.startswith('5.00')) or cgst_val_32 > 0:
-                    tax_type = 'CGST_SGST'
-                else:
-                    tax_type = 'IGST'
-            else:
-                igst_val = safe_float(sheet['I30'].value, 0.0)
-                cgst_val = safe_float(sheet['I31'].value, 0.0)
-                cgst_rate = str(sheet['E31'].value or '').strip()
-                if cgst_val > 0 or cgst_rate.startswith('2.50'):
-                    tax_type = 'CGST_SGST'
-        except:
-            pass
-        
-        wb.close()
-        
-        return {
-            'invoice_number': invoice_number,
-            'invoice_date': invoice_date,
-            'buyer_details': buyer_details,
-            'transport_mode': transport_core,
-            'delivery_charge': delivery_charge,
-            'items': items if items else [{'description': '', 'bags': '', 'quantity': 0, 'rate': 0}],
-            'tax_type': tax_type
-        }
-        
+        with open(filepath, 'rb') as f:
+            file_bytes = f.read()
+        return _extract_invoice_data_from_xlsx_bytes(file_bytes, os.path.basename(filepath))
     except Exception as e:
         print(f"Error extracting invoice data: {e}")
         import traceback

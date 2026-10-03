@@ -1,3 +1,4 @@
+import time
 """
 Google Sheets Integration for Shakambhari Invoice Generator
 ============================================================
@@ -40,6 +41,9 @@ class GoogleSheetsDB:
         
         self.client = None
         self.spreadsheet = None
+        self._worksheets = {}
+        self._cache = {}
+        self._cache_time = {}
         self._connect()
     
     def _connect(self):
@@ -57,19 +61,22 @@ class GoogleSheetsDB:
             
             self.client = gspread.authorize(creds)
             self.spreadsheet = self.client.open_by_key(self.spreadsheet_id)
-            print(f"✓ Connected to Google Sheets: {self.spreadsheet.title}")
+            print(f"[OK] Connected to Google Sheets: {self.spreadsheet.title}")
         except Exception as e:
-            print(f"✗ Failed to connect to Google Sheets: {e}")
+            print(f"[ERROR] Failed to connect to Google Sheets: {e}")
             raise
     
     def _get_or_create_sheet(self, sheet_name: str, headers: List[str]) -> gspread.Worksheet:
-        """Get a worksheet or create it if it doesn't exist."""
+        """Get a worksheet or create it if it doesn't exist, caching worksheet reference."""
+        if sheet_name in self._worksheets:
+            return self._worksheets[sheet_name]
         try:
             worksheet = self.spreadsheet.worksheet(sheet_name)
         except gspread.WorksheetNotFound:
             worksheet = self.spreadsheet.add_worksheet(title=sheet_name, rows=1000, cols=20)
             worksheet.append_row(headers)
             print(f"✓ Created new sheet: {sheet_name}")
+        self._worksheets[sheet_name] = worksheet
         return worksheet
     
     # ===================== BUYER PROFILES =====================
@@ -77,21 +84,56 @@ class GoogleSheetsDB:
     BUYER_HEADERS = ['profile_id', 'buyer_name', 'buyer_details', 'gstin', 'default_tax_type', 'created_at', 'updated_at']
     
     def get_all_buyers(self) -> List[Dict]:
-        """Get all buyer profiles."""
-        sheet = self._get_or_create_sheet('Buyers', self.BUYER_HEADERS)
-        records = sheet.get_all_records()
-        
-        # Parse buyer_details from JSON string
-        for record in records:
-            if record.get('buyer_details'):
+        """Get all buyer profiles with caching and fallback."""
+        now = time.time()
+        if 'buyers' in self._cache and (now - self._cache_time.get('buyers', 0)) < 60:
+            return list(self._cache['buyers'])
+
+        try:
+            sheet = self._get_or_create_sheet('Buyers', self.BUYER_HEADERS)
+            records = sheet.get_all_records()
+            for record in records:
+                if record.get('buyer_details'):
+                    try:
+                        record['buyer_details'] = json.loads(record['buyer_details'])
+                    except json.JSONDecodeError:
+                        record['buyer_details'] = record['buyer_details'].split('\n')
+                else:
+                    record['buyer_details'] = []
+
+            # Check if any default buyer from buyer_profiles.json is missing in sheet
+            fb_path = os.path.join(os.path.dirname(__file__), 'buyer_profiles.json')
+            if os.path.exists(fb_path):
                 try:
-                    record['buyer_details'] = json.loads(record['buyer_details'])
-                except json.JSONDecodeError:
-                    record['buyer_details'] = record['buyer_details'].split('\n')
-            else:
-                record['buyer_details'] = []
-        
-        return records
+                    with open(fb_path, 'r', encoding='utf-8') as f:
+                        fb_buyers = json.load(f)
+                    known_ids = {r.get('profile_id') for r in records}
+                    known_names = {r.get('buyer_name', '').strip().lower() for r in records}
+                    for fb_b in fb_buyers:
+                        if fb_b.get('profile_id') not in known_ids and fb_b.get('buyer_name', '').strip().lower() not in known_names:
+                            records.append(fb_b)
+                            try:
+                                self.save_buyer(fb_b)
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+
+            self._cache['buyers'] = records
+            self._cache_time['buyers'] = now
+            return records
+        except Exception as e:
+            print(f"Warning: Failed to fetch buyers from Sheets: {e}")
+            if 'buyers' in self._cache:
+                return list(self._cache['buyers'])
+            fb_path = os.path.join(os.path.dirname(__file__), 'buyer_profiles.json')
+            if os.path.exists(fb_path):
+                try:
+                    with open(fb_path, 'r', encoding='utf-8') as f:
+                        return json.load(f)
+                except Exception:
+                    pass
+            return []
     
     def get_buyer(self, profile_id: str) -> Optional[Dict]:
         """Get a specific buyer profile."""
@@ -147,73 +189,229 @@ class GoogleSheetsDB:
     # ===================== TRANSPORT MODES =====================
     
     TRANSPORT_HEADERS = ['mode', 'created_at']
+    DEFAULT_TRANSPORT_MODES = [
+        "Road",
+        "By Kolkata Assam Transways",
+        "By Gaya Aurangabad Transport",
+        "By Bhagirathi Carrying Corporation",
+        "By Shree Balaji Roadways",
+        "Kolkata Assam Transport LLP",
+        "SPS PARRCELL PRIVATE LIMITED",
+        "By Vehicle No. WB 11D 4838",
+        "By Vehicle No. WB 11E 9369",
+    ]
     
     def get_all_transport_modes(self) -> List[str]:
-        """Get all transport modes."""
-        sheet = self._get_or_create_sheet('Transport', self.TRANSPORT_HEADERS)
-        records = sheet.get_all_records()
-        return [r['mode'] for r in records if r.get('mode')]
+        """Get all transport modes with caching and fallback."""
+        now = time.time()
+        if 'transports' in self._cache and (now - self._cache_time.get('transports', 0)) < 60:
+            return list(self._cache['transports'])
+        try:
+            sheet = self._get_or_create_sheet('Transport', self.TRANSPORT_HEADERS)
+            records = sheet.get_all_records()
+            modes = [r['mode'] for r in records if r.get('mode')]
+            if not modes:
+                modes = list(self.DEFAULT_TRANSPORT_MODES)
+                try:
+                    for mode in modes:
+                        sheet.append_row([mode, datetime.now().isoformat()])
+                except Exception:
+                    pass
+            self._cache['transports'] = modes
+            self._cache_time['transports'] = now
+            return modes
+        except Exception as e:
+            print(f"Warning: Failed to fetch transport modes from Sheets: {e}")
+            if 'transports' in self._cache:
+                return list(self._cache['transports'])
+            return list(self.DEFAULT_TRANSPORT_MODES)
     
     def add_transport_mode(self, mode: str) -> bool:
         """Add a new transport mode if it doesn't exist."""
-        sheet = self._get_or_create_sheet('Transport', self.TRANSPORT_HEADERS)
-        modes = self.get_all_transport_modes()
-        
-        # Check if exists (case-insensitive)
-        if mode.lower() not in [m.lower() for m in modes]:
-            sheet.append_row([mode, datetime.now().isoformat()])
-            return True
+        try:
+            sheet = self._get_or_create_sheet('Transport', self.TRANSPORT_HEADERS)
+            modes = self.get_all_transport_modes()
+            
+            # Check if exists (case-insensitive)
+            if mode.lower() not in [m.lower() for m in modes]:
+                sheet.append_row([mode, datetime.now().isoformat()])
+                self._cache.pop('transports', None)
+                return True
+        except Exception as e:
+            print(f"Warning: Failed to add transport mode: {e}")
         return False
     
+    # ===================== DISPATCH ADDRESSES =====================
+    
+    DISPATCH_HEADERS = ['address', 'created_at']
+    DEFAULT_DISPATCH_ADDRESSES = [
+        "Hari Om Metal Works\n105, Dharamtala Road, Liluah\nHowrah - 711204, WB (19)\nGSTIN : 19ACZPN5725A1Z8",
+        "235/18, Mirpara Road\nLiluah\nHOWRAH - 711203, WB (19)",
+        "62F, J. N. MUKHERJEE ROAD\nGHUSURI\nHOWRAH - 711107, WB (19)"
+    ]
+
+    def get_all_dispatch_addresses(self) -> List[str]:
+        """Get all past dispatch addresses with caching and fallback."""
+        now = time.time()
+        if 'dispatch_addresses' in self._cache and (now - self._cache_time.get('dispatch_addresses', 0)) < 60:
+            return list(self._cache['dispatch_addresses'])
+        try:
+            sheet = self._get_or_create_sheet('Dispatch', self.DISPATCH_HEADERS)
+            records = sheet.get_all_records()
+            addresses = [r['address'].strip() for r in records if r.get('address') and r['address'].strip()]
+            # Ensure defaults are included
+            for d in self.DEFAULT_DISPATCH_ADDRESSES:
+                if d not in addresses:
+                    addresses.append(d)
+            self._cache['dispatch_addresses'] = addresses
+            self._cache_time['dispatch_addresses'] = now
+            return addresses
+        except Exception as e:
+            print(f"Warning: Failed to fetch dispatch addresses from Sheets: {e}")
+            if 'dispatch_addresses' in self._cache:
+                return list(self._cache['dispatch_addresses'])
+            return list(self.DEFAULT_DISPATCH_ADDRESSES)
+
+    def add_dispatch_address(self, address: str) -> bool:
+        """Add a new dispatch address if it doesn't exist."""
+        clean_addr = (address or '').strip()
+        if not clean_addr:
+            return False
+        try:
+            sheet = self._get_or_create_sheet('Dispatch', self.DISPATCH_HEADERS)
+            existing = self.get_all_dispatch_addresses()
+            if clean_addr.lower() not in [a.lower() for a in existing]:
+                sheet.append_row([clean_addr, datetime.now().isoformat()])
+                self._cache.pop('dispatch_addresses', None)
+                return True
+        except Exception as e:
+            print(f"Warning: Failed to add dispatch address: {e}")
+        return False
+
     # ===================== INVOICE RECORDS =====================
     
+    LEGACY_INVOICE_HEADERS = [
+        'invoice_number', 'invoice_date', 'buyer_name', 'buyer_gstin', 
+        'items_json', 'subtotal', 'tax_type', 'tax_amount', 'total_amount',
+        'transport_mode', 'file_url', 'pdf_url', 'created_at'
+    ]
+
     INVOICE_HEADERS = [
         'invoice_number', 'invoice_date', 'buyer_name', 'buyer_gstin', 
         'items_json', 'subtotal', 'tax_type', 'display_tax_type', 'tax_rate_igst', 'tax_rate_cgst', 'tax_rate_sgst', 'tax_amount', 'total_amount',
-        'transport_mode', 'file_url', 'pdf_url', 'created_at'
+        'transport_mode', 'file_url', 'pdf_url', 'ewaybill_number', 'ewaybill_date', 'ship_from_details', 'ship_to_enabled', 'ship_to_details', 'digitally_signed', 'created_at', 'delivery_charge'
     ]
 
     def _invoice_row_to_record(self, row: List[str]) -> Dict:
         """Map a raw worksheet row onto the current invoice schema."""
-        values = list(row) + [''] * max(0, len(self.INVOICE_HEADERS) - len(row))
-        record = dict(zip(self.INVOICE_HEADERS, values[:len(self.INVOICE_HEADERS)]))
+        raw_values = [str(x or '').strip() for x in row]
+        # Detect legacy rows: legacy rows had 13 columns (or row length <= 14 where column 7 is numeric tax_amount)
+        is_legacy = len(raw_values) <= 14 and (
+            len(raw_values) < 8 or raw_values[7].replace('.', '', 1).isdigit() or (len(raw_values) > 6 and raw_values[6] in ('IGST', 'CGST_SGST') and len(raw_values) <= 13)
+        )
 
-        for key in ('subtotal', 'tax_rate_igst', 'tax_rate_cgst', 'tax_rate_sgst', 'tax_amount', 'total_amount'):
+        if is_legacy:
+            values = raw_values + [''] * max(0, len(self.LEGACY_INVOICE_HEADERS) - len(raw_values))
+            record = dict(zip(self.LEGACY_INVOICE_HEADERS, values[:len(self.LEGACY_INVOICE_HEADERS)]))
+            record['display_tax_type'] = record.get('tax_type', 'IGST')
+            record['tax_rate_igst'] = 5.0 if record.get('tax_type') == 'IGST' else 0.0
+            record['tax_rate_cgst'] = 2.5 if record.get('tax_type') != 'IGST' else 0.0
+            record['tax_rate_sgst'] = 2.5 if record.get('tax_type') != 'IGST' else 0.0
+            record['delivery_charge'] = 0.0
+            record['ewaybill_number'] = ''
+            record['ewaybill_date'] = ''
+            record['ship_from_details'] = []
+            record['ship_to_enabled'] = False
+            record['ship_to_details'] = []
+            record['digitally_signed'] = True
+        else:
+            values = raw_values + [''] * max(0, len(self.INVOICE_HEADERS) - len(raw_values))
+            record = dict(zip(self.INVOICE_HEADERS, values[:len(self.INVOICE_HEADERS)]))
+
+        for key in ('subtotal', 'tax_rate_igst', 'tax_rate_cgst', 'tax_rate_sgst', 'tax_amount', 'total_amount', 'delivery_charge'):
             try:
                 record[key] = float(record.get(key, 0) or 0)
             except (TypeError, ValueError):
                 record[key] = 0.0
 
+        # Ensure ship_from_details and ship_to_details are lists. Accept both
+        # pre-parsed lists and JSON-encoded strings stored in Sheets.
+        for key in ('ship_from_details', 'ship_to_details'):
+            val = record.get(key)
+            if isinstance(val, list):
+                record[key] = val
+                continue
+            if isinstance(val, str):
+                try:
+                    record[key] = json.loads(val) if val.strip() else []
+                except json.JSONDecodeError:
+                    record[key] = [line.strip() for line in val.splitlines() if line.strip()]
+            else:
+                record[key] = []
+
+        record['ship_to_enabled'] = str(record.get('ship_to_enabled', '')).strip().lower() in {'1', 'true', 'yes'}
+        record['digitally_signed'] = str(record.get('digitally_signed', '')).strip().lower() in {'1', 'true', 'yes'}
+
         return record
     
     def get_all_invoices(self, limit: Optional[int] = 100) -> List[Dict]:
-        """Get recent invoices."""
-        sheet = self._get_or_create_sheet('Invoices', self.INVOICE_HEADERS)
-        rows = sheet.get_all_values()
-        if not rows:
-            return []
+        """Get recent invoices with caching and fallback."""
+        now = time.time()
+        if 'invoices' in self._cache and (now - self._cache_time.get('invoices', 0)) < 10:
+            records = list(self._cache['invoices'])
+            if limit is None or limit <= 0:
+                return records
+            return records[:limit]
 
-        records = [self._invoice_row_to_record(row) for row in rows[1:]]
+        try:
+            sheet = self._get_or_create_sheet('Invoices', self.INVOICE_HEADERS)
+            rows = sheet.get_all_values()
+            if not rows:
+                return []
 
-        # Parse items JSON
-        for record in records:
-            if record.get('items_json'):
-                try:
-                    record['items'] = json.loads(record['items_json'])
-                except json.JSONDecodeError:
+            records = [self._invoice_row_to_record(row) for row in rows[1:]]
+
+            for record in records:
+                if record.get('items_json'):
+                    try:
+                        record['items'] = json.loads(record['items_json'])
+                    except json.JSONDecodeError:
+                        record['items'] = []
+                else:
                     record['items'] = []
-            else:
-                record['items'] = []
 
-            record['display_tax_type'] = record.get('display_tax_type') or (
-                'CGST_SGST' if str(record.get('tax_type', '')).upper() == 'CGST_SGST' else 'IGST'
-            )
-        
-        # Sort by date descending and limit
-        records.sort(key=lambda x: x.get('created_at', ''), reverse=True)
-        if limit is None or limit <= 0:
-            return records
-        return records[:limit]
+                for key in ('ship_from_details', 'ship_to_details'):
+                    val = record.get(key)
+                    if isinstance(val, list):
+                        continue
+                    if isinstance(val, str):
+                        try:
+                            record[key] = json.loads(val) if val.strip() else []
+                        except json.JSONDecodeError:
+                            record[key] = [line.strip() for line in val.splitlines() if line.strip()]
+                    else:
+                        record[key] = []
+
+                record['ship_to_enabled'] = str(record.get('ship_to_enabled', '')).strip().lower() in {'1', 'true', 'yes'}
+                record['digitally_signed'] = str(record.get('digitally_signed', '')).strip().lower() in {'1', 'true', 'yes'}
+                record['display_tax_type'] = record.get('display_tax_type') or (
+                    'CGST_SGST' if str(record.get('tax_type', '')).upper() == 'CGST_SGST' else 'IGST'
+                )
+
+            records.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+            self._cache['invoices'] = records
+            self._cache_time['invoices'] = now
+            if limit is None or limit <= 0:
+                return records
+            return records[:limit]
+        except Exception as e:
+            print(f"Warning: Failed to fetch invoices from Sheets: {e}")
+            if 'invoices' in self._cache:
+                records = list(self._cache['invoices'])
+                if limit is None or limit <= 0:
+                    return records
+                return records[:limit]
+            return []
     
     def save_invoice(self, invoice: Dict) -> bool:
         """Save an invoice record."""
@@ -239,8 +437,16 @@ class GoogleSheetsDB:
             invoice.get('transport_mode', ''),
             invoice.get('file_url', ''),
             invoice.get('pdf_url', ''),
-            now
+            invoice.get('ewaybill_number', ''),
+            invoice.get('ewaybill_date', ''),
+            json.dumps(invoice.get('ship_from_details', [])),
+            str(bool(invoice.get('ship_to_enabled', False))).lower(),
+            json.dumps(invoice.get('ship_to_details', [])),
+            str(bool(invoice.get('digitally_signed', False))).lower(),
+            now,
+            invoice.get('delivery_charge', 0.0)
         ])
+        self._cache.pop('invoices', None)
         return True
     
     def get_invoice(self, invoice_number: str) -> Optional[Dict]:

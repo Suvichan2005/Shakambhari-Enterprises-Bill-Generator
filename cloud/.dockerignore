@@ -1,0 +1,11 @@
+service-account.json
+*.json
+!package.json
+.env*
+__pycache__/
+*.py[cod]
+app_cloud_backup.py
+test*.xlsx
+cookies.txt
+.git
+.gitignore

@@ -22,10 +22,8 @@ from flask import Flask, render_template, request, redirect, url_for, flash, jso
 from datetime import datetime
 import uuid
 from num2words import num2words
-from typing import Any, List, Dict, Optional, Tuple
+from typing import Any, List, Dict, Optional
 from werkzeug.exceptions import HTTPException
-import urllib.request
-import urllib.error
 from pathlib import Path
 
 # Cloud integrations
@@ -315,20 +313,6 @@ def _format_datetime_display(raw_value: str) -> str:
     return text
 
 
-def _invoice_sort_key(rec: Dict) -> Tuple[str, int, str]:
-    """Sort key prioritizing invoice date ISO, numeric invoice number, and timestamp."""
-    d = str(rec.get('invoice_date') or '').strip()
-    m = re.match(r'^(\d{1,2})[/\.-](\d{1,2})[/\.-](\d{4})', d)
-    if m:
-        d = f"{m.group(3)}-{int(m.group(2)):02d}-{int(m.group(1)):02d}"
-    num = 0
-    nm = re.search(r'(\d+)', str(rec.get('invoice_number') or ''))
-    if nm:
-        num = int(nm.group(1))
-    created = str(rec.get('created_at') or '')
-    return (d, num, created)
-
-
 def _build_invoice_rows(records: List[Dict]) -> List[Dict]:
     """Normalize invoice records for index/dashboard displays."""
     rows: List[Dict] = []
@@ -361,7 +345,7 @@ def _build_invoice_rows(records: List[Dict]) -> List[Dict]:
             'transport_mode': extract_transport_core(rec.get('transport_mode', '')),
         })
 
-    rows.sort(key=_invoice_sort_key, reverse=True)
+    rows.sort(key=lambda x: x.get('created_at', ''), reverse=True)
     return rows
 
 
@@ -413,149 +397,56 @@ def _parse_invoice_filename(filename: str) -> Dict[str, str]:
 
 
 def _extract_invoice_data_from_xlsx_bytes(file_bytes: bytes, filename: str = '') -> Dict[str, Any]:
-    """Extract invoice payload from an XLSX file stored in GCS or locally."""
+    """Extract invoice payload from an XLSX file stored in GCS."""
     wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
     try:
         sheet = wb.active
 
-        invoice_number = ''
+        invoice_num_raw = str(sheet['E2'].value or '').strip()
+        invoice_number = re.sub(r'(?i)^\s*invoice\s*no\.?\s*', '', invoice_num_raw).strip(' :-')
+
+        invoice_date_raw = str(sheet['H2'].value or '').strip()
+        invoice_date_text = re.sub(r'(?i)^\s*date\s*', '', invoice_date_raw).strip(' :-')
         invoice_date = ''
+        for fmt in ('%d/%m/%Y', '%Y-%m-%d'):
+            try:
+                dt = datetime.strptime(invoice_date_text, fmt)
+                invoice_date = dt.strftime('%Y-%m-%d')
+                break
+            except ValueError:
+                continue
+
         ewaybill_number = ''
         ewaybill_date = ''
-        transport_mode = ''
-        delivery_charge = 0.0
-        tax_type = 'IGST'
-        subtotal = 0.0
-        tax_amount = 0.0
-        total_amount = 0.0
-        digitally_signed = False
+        raw_eway = str(sheet['A3'].value or '').strip()
+        if raw_eway:
+            ewaybill_number = re.sub(r'(?i)^\s*ewaybill\s*no\.?\s*', '', raw_eway).strip(' :-')
 
-        if hasattr(sheet, '_images') and sheet._images:
-            digitally_signed = True
-
-        # Helper to parse dates flexibly
-        def _parse_date_value(val_any: Any) -> str:
-            if not val_any:
-                return ''
-            if hasattr(val_any, 'strftime'):
-                return val_any.strftime('%Y-%m-%d')
-            s = str(val_any).strip()
-            m = re.search(r'(?i)\bdate\s*[:\s]+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})', s)
-            if not m:
-                m = re.search(r'\b(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b', s)
-            if m:
-                raw_d = m.group(1).replace('-', '/')
-                for fmt in ('%d/%m/%Y', '%d/%m/%y', '%Y/%m/%d', '%m/%d/%Y'):
-                    try:
-                        return datetime.strptime(raw_d, fmt).strftime('%Y-%m-%d')
-                    except ValueError:
-                        pass
-            return ''
-
-        # 1. Direct cell extraction for standard 2026-27 & older layouts
-        f2_val = sheet['F2'].value
-        if f2_val:
-            invoice_date = _parse_date_value(f2_val)
-        if not invoice_date:
-            h2_val = sheet['H2'].value
-            if h2_val:
-                invoice_date = _parse_date_value(h2_val)
-
-        a2_val = str(sheet['A2'].value or '').strip()
-        m_inv = re.search(r'(?i)invoice\s*no\.?\s*[:\s]*([0-9a-zA-Z\-_/]+)', a2_val)
-        if m_inv:
-            invoice_number = m_inv.group(1).strip()
-        else:
-            e2_val = str(sheet['E2'].value or '').strip()
-            m_inv = re.search(r'(?i)invoice\s*no\.?\s*[:\s]*([0-9a-zA-Z\-_/]+)', e2_val)
-            if m_inv:
-                invoice_number = m_inv.group(1).strip()
-
-        a3_val = str(sheet['A3'].value or '').strip()
-        m_ew = re.search(r'(?i)ewaybill\s*no\.?\s*[:\s]*(\d+)', a3_val)
-        if m_ew:
-            ewaybill_number = m_ew.group(1).strip()
-
-        f3_val = sheet['F3'].value
-        if f3_val:
-            m_ewd = re.search(r'(?i)ewaybill\s*date\s*[:\s]+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})', str(f3_val))
-            if m_ewd:
-                ewaybill_date = _parse_date_value(m_ewd.group(1))
-
-        a20_val = str(sheet['A20'].value or '').strip()
-        m_trans = re.search(r'(?i)mode\s*of\s*transports?\s*[:\s]*(.*)', a20_val)
-        if m_trans and m_trans.group(1).strip():
-            transport_mode = extract_transport_core(m_trans.group(1).strip())
-
-        # 2. General scan fallback
-        for row in sheet.iter_rows(values_only=False):
-            for cell in row:
-                val = str(cell.value or '').strip()
-                if not val:
+        raw_eway_date = str(sheet['F3'].value or '').strip()
+        if raw_eway_date:
+            ewaybill_date = re.sub(r'(?i)^\s*ewaybill\s*date\s*', '', raw_eway_date).strip(' :-')
+            for fmt in ('%d/%m/%Y', '%Y-%m-%d'):
+                try:
+                    dt = datetime.strptime(ewaybill_date, fmt)
+                    ewaybill_date = dt.strftime('%Y-%m-%d')
+                    break
+                except ValueError:
                     continue
 
-                if not invoice_number:
-                    m = re.search(r'(?i)invoice\s*no\.?\s*[:\s]*([0-9a-zA-Z\-_/]+)', val)
-                    if m:
-                        invoice_number = m.group(1).strip()
+        buyer_details: List[str] = []
+        for row in range(8, 16):
+            value = sheet[f'A{row}'].value
+            if value not in (None, ''):
+                buyer_details.append(str(value).strip())
 
-                if not invoice_date and 'ewaybill' not in val.lower():
-                    m = re.search(r'(?i)\bdate\s*[:\s]+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})', val)
-                    if m:
-                        invoice_date = _parse_date_value(m.group(1))
+        buyer_name = ''
+        for line in buyer_details:
+            norm = line.strip().lower()
+            if norm in {'buyer :', 'buyer:'}:
+                continue
+            buyer_name = line.strip()
+            break
 
-                if not ewaybill_number:
-                    m = re.search(r'(?i)ewaybill\s*no\.?\s*[:\s]*(\d+)', val)
-                    if m:
-                        ewaybill_number = m.group(1).strip()
-
-                if not ewaybill_date and 'ewaybill' in val.lower():
-                    m = re.search(r'(?i)ewaybill\s*date\s*[:\s]+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})', val)
-                    if m:
-                        ewaybill_date = _parse_date_value(m.group(1))
-
-                if not transport_mode:
-                    m = re.search(r'(?i)mode\s*of\s*transports?\s*[:\s]*(.*)', val)
-                    if m:
-                        raw_t = m.group(1).strip()
-                        if not raw_t:
-                            next_val = sheet.cell(row=cell.row, column=cell.column+1).value or sheet.cell(row=cell.row, column=cell.column+2).value
-                            if next_val:
-                                raw_t = str(next_val).strip()
-                        transport_mode = extract_transport_core(raw_t)
-
-                if 'delivery charge' in val.lower() or val.lower() == 'delivery':
-                    val_cell = sheet.cell(row=cell.row, column=9).value
-                    delivery_charge = safe_float(val_cell, 0.0)
-
-                if 's.g.s.t' in val.lower() or ('c.g.s.t' in val.lower() and '0.00%' not in str(sheet.cell(row=cell.row, column=5).value or '')):
-                    rate_val = safe_float(sheet.cell(row=cell.row, column=5).value, 0.0)
-                    amt_val = safe_float(sheet.cell(row=cell.row, column=9).value, 0.0)
-                    if rate_val > 0 or amt_val > 0:
-                        tax_type = 'CGST_SGST'
-
-                if val.upper() == 'TOTAL':
-                    amt = safe_float(sheet.cell(row=cell.row, column=9).value, 0.0)
-                    if amt > 0:
-                        total_amount = amt
-
-                if 'digitally signed' in val.lower():
-                    digitally_signed = True
-
-        buyer_details = []
-        buyer_start_row = 13
-        for r in range(1, 20):
-            cval = str(sheet[f'A{r}'].value or '').strip()
-            if 'BUYER' in cval.upper():
-                buyer_start_row = r + 1
-                break
-
-        for r in range(buyer_start_row, buyer_start_row + 7):
-            v = sheet[f'A{r}'].value
-            if v and not str(v).upper().startswith('MODE OF TRANSPORT'):
-                buyer_details.append(str(v).strip())
-
-        buyer_name = buyer_details[0] if buyer_details else ''
         buyer_gstin = ''
         for line in buyer_details:
             m = re.search(r'GSTIN\s*[-:]\s*([A-Z0-9]+)', str(line), re.IGNORECASE)
@@ -563,22 +454,22 @@ def _extract_invoice_data_from_xlsx_bytes(file_bytes: bytes, filename: str = '')
                 buyer_gstin = m.group(1).upper()
                 break
 
-        ship_from_details = []
-        for r in range(5, 10):
-            v = sheet[f'F{r}'].value
-            if v and not str(v).upper().startswith('SHIP TO'):
-                ship_from_details.append(str(v).strip())
+        transport_mode = extract_transport_core(str(sheet['E10'].value or '').strip())
 
-        ship_to_details = []
-        for r in range(13, 19):
-            v = sheet[f'F{r}'].value
-            if v:
-                ship_to_details.append(str(v).strip())
+        ship_from_details: List[str] = []
+        for row in range(5, 10):
+            value = sheet[f'F{row}'].value
+            if value not in (None, ''):
+                ship_from_details.append(str(value).strip())
 
-        # Extract items
-        items = []
-        item_start_row = 22 if str(sheet['Z1'].value or '') == 'v2' or sheet['A21'].value else 18
-        for row in range(item_start_row, item_start_row + 10):
+        ship_to_details: List[str] = []
+        for row in range(13, 18):
+            value = sheet[f'F{row}'].value
+            if value not in (None, ''):
+                ship_to_details.append(str(value).strip())
+
+        items: List[Dict[str, Any]] = []
+        for row in range(18, 28):
             desc_raw = str(sheet[f'A{row}'].value or '').strip()
             hsn_val = sheet[f'H{row}'].value or sheet[f'B{row}'].value
             hsn = str(hsn_val).strip() if hsn_val not in (None, '') else ''
@@ -600,6 +491,22 @@ def _extract_invoice_data_from_xlsx_bytes(file_bytes: bytes, filename: str = '')
                     'quantity': qty,
                     'rate': rate,
                 })
+
+        delivery_charge = 0.0
+        label_30 = str(sheet['C30'].value or '').strip().lower()
+        if 'delivery' in label_30:
+            delivery_charge = safe_float(sheet['I30'].value, 0.0)
+
+        digitally_signed = False
+        sign_cell = str(sheet['G48'].value or '')
+        if 'digitally signed' in sign_cell.lower():
+            digitally_signed = True
+
+        tax_type = 'IGST'
+        rate_31 = str(sheet['E31'].value or '').strip()
+        rate_32 = str(sheet['E32'].value or '').strip()
+        if rate_31.startswith('2.50') or rate_32.startswith('2.50'):
+            tax_type = 'CGST_SGST'
 
         parsed_from_name = _parse_invoice_filename(filename)
         if not invoice_number:
@@ -624,7 +531,6 @@ def _extract_invoice_data_from_xlsx_bytes(file_bytes: bytes, filename: str = '')
             'items': items,
             'tax_type': tax_type,
             'filename': filename,
-            'total_amount': total_amount,
             'pdf_filename': filename.replace('.xlsx', '.pdf') if filename.lower().endswith('.xlsx') else '',
         }
     finally:
@@ -663,7 +569,7 @@ def _merge_with_storage_rows(sheet_rows: List[Dict], storage_rows: List[Dict]) -
             'total_amount': '',
         })
 
-    merged.sort(key=_invoice_sort_key, reverse=True)
+    merged.sort(key=lambda x: x.get('sort_ts', 0), reverse=True)
     return merged
 
 
@@ -883,25 +789,6 @@ def normalize_transport_mode(mode: str) -> str:
     return f"Mode of Transport: {core}"
 
 
-def clean_address_lines(lines: Any) -> List[str]:
-    """Strip redundant leading 'Buyer:' or 'Ship To:' header lines from address lists."""
-    if not lines:
-        return []
-    if isinstance(lines, str):
-        lines = [line.strip() for line in re.split(r'[\r\n]+', lines) if line.strip()]
-    cleaned = []
-    for line in lines:
-        s = str(line).strip()
-        if not s:
-            continue
-        if re.match(r'^(buyer|ship\s*to)\s*:\s*$', s, re.IGNORECASE):
-            continue
-        s = re.sub(r'^(buyer|ship\s*to)\s*:\s*', '', s, flags=re.IGNORECASE).strip()
-        if s:
-            cleaned.append(s)
-    return cleaned
-
-
 def _normalize_name(value: str) -> str:
     """Normalize names for robust profile matching."""
     if not value:
@@ -951,136 +838,162 @@ def _match_buyer_profile(invoice: Dict, buyers: List[Dict]) -> Optional[Dict]:
 
 def generate_invoice_excel(invoice_data: Dict) -> bytes:
     """
-    Generate an Excel invoice from the canonical 2026-27 template stored in Cloud Storage.
-    The master template already contains the pixel-perfect signature natively embedded.
+    Generate an Excel invoice from the template stored in Cloud Storage.
     Returns the Excel file as bytes.
     """
-    template_bytes = None
-    try:
-        storage = get_cloud_storage()
-        if storage:
-            template_result = storage.download_template("invoice_template_2026_27.xlsx")
-            if template_result:
-                template_bytes, _ = template_result
-    except Exception as e:
-        app.logger.warning("Could not download template from Cloud Storage: %s", e)
+    storage = get_cloud_storage()
     
-    if not template_bytes:
-        local_template = Path(__file__).parent / "invoice_template_2026_27.xlsx"
-        if local_template.exists():
-            template_bytes = local_template.read_bytes()
-        else:
-            raise Exception("Invoice template 'invoice_template_2026_27.xlsx' not found in Cloud Storage or locally")
+    # Download template
+    template_result = storage.download_template()
+    if not template_result:
+        raise Exception("Invoice template not found in Cloud Storage")
     
-    wb = openpyxl.load_workbook(io.BytesIO(template_bytes))
-    sheet = wb.active
-
-    # Force 1-page print settings for LibreOffice Calc
-    sheet.page_setup.orientation = sheet.ORIENTATION_PORTRAIT
-    sheet.page_setup.paperSize = sheet.PAPERSIZE_A4
-    sheet.page_setup.fitToWidth = 1
-    sheet.page_setup.fitToHeight = 1
-    sheet.sheet_properties.pageSetUpPr.fitToPage = True
-    sheet.print_area = 'A1:I50'
-    sheet.page_margins.left = 0.4
-    sheet.page_margins.right = 0.4
-    sheet.page_margins.top = 0.4
-    sheet.page_margins.bottom = 0.4
-
-    # --- INVOICE DETAILS ---
-    sheet['A2'] = f"INVOICE No. {invoice_data.get('invoice_number', '')}"
-    sheet['F2'] = f"Date : {invoice_data.get('invoice_date_display', '')}"
+    template_bytes, template_name = template_result
     
-    ewaybill_num = str(invoice_data.get('ewaybill_number', '') or '').strip()
-    sheet['A3'] = f"Ewaybill No. {ewaybill_num}" if ewaybill_num else "Ewaybill No. "
-        
-    ewaybill_date = str(invoice_data.get('ewaybill_date_display', '') or '').strip()
-    # If ewaybill no. is blank, ewaybill date must also be blank
-    if ewaybill_num and ewaybill_date:
-        sheet['F3'] = f"Ewaybill Date : {ewaybill_date}"
-    else:
-        sheet['F3'] = "Ewaybill Date : "
+    source_wb = openpyxl.load_workbook(io.BytesIO(template_bytes))
+    source_sheet = source_wb.active
 
-    # --- BUYER DETAILS ---
-    buyer_details = clean_address_lines(invoice_data.get('buyer_details', []))
-    for row_idx in range(13, 19):
-        sheet[f'A{row_idx}'] = ''
-        
-    for i, detail in enumerate(buyer_details[:6]):
-        sheet[f'A{13+i}'] = detail
+    dest_wb = openpyxl.Workbook()
+    if dest_wb.sheetnames:
+        dest_wb.remove(dest_wb.active)
+    dest_sheet = dest_wb.create_sheet(title=source_sheet.title)
 
-    # --- SHIP FROM DETAILS ---
-    ship_from = clean_address_lines(invoice_data.get('ship_from_details', []) or [])
+    # Copy page setup and all cells/styles exactly (local parity behavior).
+    dest_sheet.page_setup = copy(source_sheet.page_setup)
+    dest_sheet.page_margins = copy(source_sheet.page_margins)
+
+    for row in source_sheet.iter_rows():
+        for source_cell in row:
+            dest_cell = dest_sheet.cell(row=source_cell.row, column=source_cell.column, value=source_cell.value)
+            if source_cell.has_style:
+                dest_cell.font = copy(source_cell.font)
+                dest_cell.border = copy(source_cell.border)
+                dest_cell.fill = copy(source_cell.fill)
+                dest_cell.number_format = source_cell.number_format
+                dest_cell.protection = copy(source_cell.protection)
+                dest_cell.alignment = copy(source_cell.alignment)
+
+    # Clear residual thin line on Salt lake Sector 2 (Column B, Row 41)
+    if dest_sheet['B41'].border:
+        new_border = copy(dest_sheet['B41'].border)
+        new_border.left = Side(style=None)
+        dest_sheet['B41'].border = new_border
+
+    dest_sheet['E2'] = f"INVOICE No. {invoice_data['invoice_number']}"
+    dest_sheet['H2'] = f"Date : {invoice_data['invoice_date_display']}"
+    dest_sheet['A3'] = f"Ewaybill No. {invoice_data.get('ewaybill_number', '')}"
+    dest_sheet['F3'] = f"Ewaybill Date : {invoice_data.get('ewaybill_date_display', '')}"
+
+    ship_from = invoice_data.get('ship_from_details', []) or []
+    ship_to_enabled = invoice_data.get('ship_to_enabled', False)
+    ship_to = invoice_data.get('ship_to_details', []) or []
+
+    buyer_details = invoice_data.get('buyer_details', [])
+    for i, detail in enumerate(buyer_details[:8]):
+        cell = dest_sheet[f'A{8+i}']
+        cell.value = detail
+        try:
+            if isinstance(detail, str) and detail.strip().lower().startswith('buyer'):
+                cell.font = Font(bold=True)
+            else:
+                cell.font = Font(bold=False)
+        except Exception:
+            pass
+
+    # Apply ship-from lines in the right-side section and clear any stale content.
     for row_idx in range(5, 10):
-        sheet[f'F{row_idx}'] = ''
-        
-    for i, detail in enumerate(ship_from[:5]):
-        sheet[f'F{5+i}'] = detail
+        dest_sheet[f'F{row_idx}'] = ''
 
-    # --- SHIP TO DETAILS ---
-    # Ship To always mirrors buyer details in the standard template
-    raw_ship_to = invoice_data.get('ship_to_details') or invoice_data.get('buyer_details') or []
-    ship_to = clean_address_lines(raw_ship_to)
-    for row_idx in range(13, 19):
-        sheet[f'F{row_idx}'] = ''
-        
-    for i, detail in enumerate(ship_to[:6]):
-        sheet[f'F{13+i}'] = detail
+    for i, line in enumerate(ship_from[:5]):
+        cell = dest_sheet[f'F{5 + i}']
+        cell.value = line
+        try:
+            cell.font = Font(bold=False)
+        except Exception:
+            pass
 
-    # --- TRANSPORT ---
-    t_mode = normalize_transport_mode(invoice_data.get('transport_mode', ''))
-    sheet['A20'] = t_mode if t_mode else ""
+    # Apply optional ship-to lines and clear any stale content.
+    for row_idx in range(13, 18):
+        dest_sheet[f'F{row_idx}'] = ''
 
-    # --- ITEMS ---
+    if ship_to_enabled:
+        for i, line in enumerate(ship_to[:5]):
+            cell = dest_sheet[f'F{13 + i}']
+            cell.value = line
+            try:
+                cell.font = Font(bold=False)
+            except Exception:
+                pass
+
+    # Clear neighbor cells first so no legacy template text leaks into output.
+    for cell_ref in ('F10', 'G10', 'H10'):
+        dest_sheet[cell_ref] = ''
+    dest_sheet['E10'] = normalize_transport_mode(invoice_data.get('transport_mode', ''))
+
     items = invoice_data.get('items', [])
-    first_item_row = 22
-    
-    for row_idx in range(22, 32):
-        sheet[f'A{row_idx}'] = ''
-        sheet[f'F{row_idx}'] = ''
-        sheet[f'G{row_idx}'] = ''
-        sheet[f'H{row_idx}'] = ''
+    first_item_row = 18
+    template_hsn = source_sheet[f'H{first_item_row}'].value or source_sheet[f'B{first_item_row}'].value
+    item_rows: List[int] = []
 
-    item_rows = []
-    template_hsn = sheet['H22'].value or '76151030'
-    
     for idx, item in enumerate(items[:10]):
         row_num = first_item_row + idx
         item_rows.append(row_num)
 
-        description = item.get('description', '').strip()
-        # Ensure sequential numbering (1. ..., 2. ...) across both single and multi-item bills
-        clean_desc = re.sub(r'^\d+\.\s*', '', description).strip()
-        if clean_desc:
-            description = f"{idx + 1}. {clean_desc}"
+        description = item.get('description', '')
+        if len(items) > 1 and description and not description[0].isdigit():
+            description = f"{idx + 1}. {description}"
 
         hsn_value = item.get('hsn') or template_hsn
         quantity = safe_float(item.get('quantity', 0), 0.0)
         rate = safe_float(item.get('rate', 0), 0.0)
 
-        sheet[f'A{row_num}'] = description
-        if hsn_value:
-            sheet[f'H{row_num}'] = hsn_value
-        sheet[f'F{row_num}'] = quantity
-        sheet[f'G{row_num}'] = rate
-        sheet[f'I{row_num}'] = f'=F{row_num}*G{row_num}'
+        dest_sheet[f'A{row_num}'] = description
+        if hsn_value is not None:
+            dest_sheet[f'H{row_num}'] = hsn_value
+        dest_sheet[f'F{row_num}'] = quantity
+        dest_sheet[f'F{row_num}'].number_format = '0.000'
+        dest_sheet[f'G{row_num}'] = rate
+        dest_sheet[f'G{row_num}'].number_format = '0.00'
+        dest_sheet[f'I{row_num}'] = f'=F{row_num}*G{row_num}'
+        dest_sheet[f'I{row_num}'].number_format = '0.00'
 
-    # --- SUBTOTALS & TAXES ---
+        # Explicitly copy all styles from the first item row (row 18) to ensure 
+        # missing borders, fonts (like bold HSN), and alignments apply to rows 2+.
+        if row_num > first_item_row:
+            for col_letter in ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']:
+                src_cell = dest_sheet[f'{col_letter}{first_item_row}']
+                tgt_cell = dest_sheet[f'{col_letter}{row_num}']
+                if src_cell.has_style:
+                    tgt_cell.font = copy(src_cell.font)
+                    
+                    # Copy border but strip the top border so we don't draw lines between items
+                    new_border = copy(src_cell.border)
+                    new_border.top = openpyxl.styles.borders.Side(style=None)
+                    tgt_cell.border = new_border
+                    
+                    tgt_cell.fill = copy(src_cell.fill)
+                    tgt_cell.alignment = copy(src_cell.alignment)
+                    if not tgt_cell.number_format or tgt_cell.number_format == 'General':
+                        tgt_cell.number_format = src_cell.number_format
+
     if len(item_rows) == 1:
         subtotal_formula = f'=I{item_rows[0]}'
-        qty_formula = f'=F{item_rows[0]}'
     elif len(item_rows) > 1:
         subtotal_formula = f'=SUM(I{item_rows[0]}:I{item_rows[-1]})'
-        qty_formula = f'=SUM(F{item_rows[0]}:F{item_rows[-1]})'
     else:
         subtotal_formula = '=0'
-        qty_formula = '=0'
-        
-    sheet['F32'] = qty_formula
-    sheet['I32'] = subtotal_formula
-    
+
+    dest_sheet['Z1'] = 'v2'
+    dest_sheet.column_dimensions['Z'].hidden = True
+
+    dest_sheet['I29'] = subtotal_formula
+    dest_sheet['I29'].number_format = '0.00'
+
     delivery_charge = max(0.0, safe_float(invoice_data.get('delivery_charge', 0), 0.0))
-    sheet['I33'] = delivery_charge
+    dest_sheet['C30'] = 'Delivery Charge'
+    dest_sheet['E30'] = ''
+    dest_sheet['I30'] = delivery_charge
+    dest_sheet['I30'].number_format = '0.00'
 
     tax_type = invoice_data.get('tax_type', 'IGST')
     tax_scheme = _resolve_tax_scheme(
@@ -1089,74 +1002,238 @@ def generate_invoice_excel(invoice_data: Dict) -> bytes:
         invoice_data.get('tax_rate_cgst', 2.5),
         invoice_data.get('tax_rate_sgst', 2.5),
     )
-    
-    tax_base_formula = '(I32+I33)'
-    
+    tax_base_formula = '(I29+I30)'
     if tax_scheme['display_type'] == 'IGST':
-        sheet['C34'] = 'G.S.T SALES I.G.S.T @'
-        sheet['E34'] = f"{tax_scheme['igst_rate']:.2f}%"
-        sheet['I34'] = f'=ROUND({tax_base_formula}*{tax_scheme["igst_rate"]}/100, 2)'
-        sheet['C35'] = 'G.S.T SALES C.G.S.T @'
-        sheet['E35'] = '0.00%'
-        sheet['I35'] = 0.0
-    else:
-        sheet['C34'] = 'G.S.T SALES C.G.S.T @'
-        sheet['E34'] = f"{tax_scheme['cgst_rate']:.2f}%"
-        sheet['I34'] = f'=ROUND({tax_base_formula}*{tax_scheme["cgst_rate"]}/100, 2)'
-        sheet['C35'] = 'G.S.T SALES S.G.S.T @'
-        sheet['E35'] = f"{tax_scheme['sgst_rate']:.2f}%"
-        sheet['I35'] = f'=ROUND({tax_base_formula}*{tax_scheme["sgst_rate"]}/100, 2)'
+        dest_sheet['C31'] = 'G.S.T SALES I.G.S.T @'
+        dest_sheet['E31'] = f"{tax_scheme['igst_rate']:.2f}%"
+        dest_sheet['I31'] = f'=ROUND({tax_base_formula}*{tax_scheme["igst_rate"]}/100, 2)'
+        dest_sheet['I31'].number_format = '0.00'
 
-    sheet['I41'] = '=I32+I33+I34+I35'
-    sheet['I37'] = '=ROUND(I41,0)-I41'
-    sheet['I38'] = '=ROUND(I41,0)'
-    
-    # --- ROW VISIBILITY ---
+        dest_sheet['C32'] = 'G.S.T SALES C.G.S.T @'
+        dest_sheet['E32'] = '0.00%'
+        dest_sheet['I32'] = 0.0
+        dest_sheet['I32'].number_format = '0.00'
+
+        dest_sheet['C33'] = ''
+        dest_sheet['E33'] = ''
+        dest_sheet['I33'] = ''
+    else:
+        dest_sheet['C31'] = 'G.S.T SALES C.G.S.T @'
+        dest_sheet['E31'] = f"{tax_scheme['cgst_rate']:.2f}%"
+        dest_sheet['I31'] = f'=ROUND({tax_base_formula}*{tax_scheme["cgst_rate"]}/100, 2)'
+        dest_sheet['I31'].number_format = '0.00'
+
+        dest_sheet['C32'] = 'G.S.T SALES S.G.S.T @'
+        dest_sheet['E32'] = f"{tax_scheme['sgst_rate']:.2f}%"
+        dest_sheet['I32'] = f'=ROUND({tax_base_formula}*{tax_scheme["sgst_rate"]}/100, 2)'
+        dest_sheet['I32'].number_format = '0.00'
+
+        dest_sheet['C33'] = ''
+        dest_sheet['E33'] = ''
+        dest_sheet['I33'] = ''
+
+    dest_sheet['I38'] = '=I29+I30+I31+I32'
+    dest_sheet.row_dimensions[38].hidden = True
+    dest_sheet['I34'] = '=ROUND(I38,0)-I38'
+    dest_sheet['I34'].number_format = '0.00'
+    dest_sheet['I35'] = '=ROUND(I38,0)'
+    dest_sheet['I35'].number_format = '0.00'
+    dest_sheet['I36'] = ''
+
     subtotal = sum(safe_float(item.get('quantity', 0), 0.0) * safe_float(item.get('rate', 0), 0.0) for item in items)
     tax_base_value = subtotal + delivery_charge
-    
     if tax_scheme['display_type'] == 'IGST':
         igst_value = tax_base_value * (tax_scheme['igst_rate'] / 100.0)
-        sheet.row_dimensions[34].hidden = igst_value <= 0
-        sheet.row_dimensions[35].hidden = True
+        dest_sheet.row_dimensions[31].hidden = igst_value <= 0
+        dest_sheet.row_dimensions[32].hidden = True
     else:
         cgst_value = tax_base_value * (tax_scheme['cgst_rate'] / 100.0)
         sgst_value = tax_base_value * (tax_scheme['sgst_rate'] / 100.0)
-        sheet.row_dimensions[34].hidden = cgst_value <= 0
-        sheet.row_dimensions[35].hidden = sgst_value <= 0
-        
-    sheet.row_dimensions[33].hidden = delivery_charge <= 0
-    
-    # --- AMOUNT IN WORDS ---
+        dest_sheet.row_dimensions[31].hidden = cgst_value <= 0
+        dest_sheet.row_dimensions[32].hidden = sgst_value <= 0
+    dest_sheet.row_dimensions[30].hidden = delivery_charge <= 0
+    dest_sheet.row_dimensions[33].hidden = False
+
     if tax_scheme['display_type'] == 'IGST':
         tax_amount = tax_base_value * (tax_scheme['igst_rate'] / 100.0)
     else:
         tax_amount = tax_base_value * ((tax_scheme['cgst_rate'] + tax_scheme['sgst_rate']) / 100.0)
-        
-    total_before_round = tax_base_value + tax_amount
+    total_before_round = subtotal + delivery_charge + tax_amount
     rounded_total = round_half_up(total_before_round)
-    
+    # Remove any old amount words text from adjacent cells.
+    for col in ('B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'):
+        dest_sheet[f'{col}37'] = ''
+
     if rounded_total > 0:
         words = num2words(int(rounded_total), lang='en_IN').replace('-', ' ').replace(',', ' ').title()
         amount_words = f"AMOUNT : {words} Only"
     else:
         amount_words = 'AMOUNT : Zero Only'
-    sheet['A40'] = amount_words
-    
-    # Authorised Signatory explicitly maintained under signature image
-    sheet['G48'] = 'Authorised Signatory'
+    dest_sheet['A37'] = amount_words
 
-    # Add layout marker
-    sheet['Z1'] = 'v2'
-    sheet.column_dimensions['Z'].hidden = True
+    # If digitally signed, try to embed the user's signature image into the
+    # Excel output. The user keeps a signature image at a known path on disk;
+    # attempt to use that for both XLSX and PDF rendering.
+    # Support multiple signature locations: local user path (dev), repo root, and
+    # project static folder. Prefer the first existing image so signed invoices
+    # include the real signature when available.
+    signature_paths = [
+        Path(r"C:\Users\KIIT0001\Documents\Bills\Shakambhari Enterprises\signature.png"),
+        Path(__file__).resolve().parents[1] / 'signature.png',
+        Path(__file__).resolve().parents[1] / 'static' / 'signature.png',
+        Path(__file__).resolve().parents[0] / 'static' / 'signature.png',
+    ]
 
+    chosen_sig = None
+    tmp_sig_file = None
     try:
-        output = io.BytesIO()
-        wb.save(output)
-        output.seek(0)
-        return output.read()
+        if invoice_data.get('digitally_signed'):
+            # First prefer local filesystem paths (dev). If none found, try Cloud Storage.
+            for p in signature_paths:
+                try:
+                    if p and p.exists():
+                        chosen_sig = p
+                        break
+                except Exception:
+                    continue
+
+            # If not found locally, attempt to fetch from Cloud Storage (bucket static path).
+            if not chosen_sig:
+                try:
+                    storage = get_cloud_storage()
+                    for candidate in ('static/signature.png', 'signature.png', 'templates/signature.png'):
+                        data = storage.download_file(candidate)
+                        if data:
+                            # write to a temp file for openpyxl to read
+                            tf = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+                            tf.write(data)
+                            tf.flush()
+                            tf.close()
+                            tmp_sig_file = Path(tf.name)
+                            chosen_sig = tmp_sig_file
+                            break
+                except Exception:
+                    chosen_sig = None
+
+            if chosen_sig:
+                try:
+                    from openpyxl.drawing.image import Image as XLImage
+                    img = XLImage(str(chosen_sig))
+                    # Slightly larger for Excel output; preserve aspect ratio by setting width.
+                    img.width = 260
+                    img.height = 90
+                    # place signature slightly higher to fit footer region
+                    dest_sheet.add_image(img, 'G42')
+                except Exception:
+                    dest_sheet['G48'] = 'Digitally Signed by Authorised Signatory.'
+            else:
+                dest_sheet['G48'] = 'Digitally Signed by Authorised Signatory.'
+    except Exception:
+        try:
+            dest_sheet['G48'] = 'Digitally Signed by Authorised Signatory.'
+        except Exception:
+            pass
     finally:
-        wb.close()
+        # Clean up any temporary signature file we created
+        try:
+            if tmp_sig_file and tmp_sig_file.exists():
+                tmp_sig_file.unlink()
+        except Exception:
+            pass
+
+    dest_sheet['A50'] = 'Subject to Kolkata Jurisdiction.'
+
+    for col_letter, source_dim in source_sheet.column_dimensions.items():
+        dest_dim = dest_sheet.column_dimensions[col_letter]
+        dest_dim.width = source_dim.width
+        dest_dim.hidden = source_dim.hidden
+        dest_dim.outline_level = source_dim.outline_level
+        dest_dim.collapsed = source_dim.collapsed
+
+    # Apply conservative column width overrides to match typical invoice layout
+    try:
+        dest_sheet.column_dimensions['A'].width = 55
+        dest_sheet.column_dimensions['F'].width = 18
+        dest_sheet.column_dimensions['G'].width = 12
+        dest_sheet.column_dimensions['H'].width = 12
+        dest_sheet.column_dimensions['I'].width = 14
+    except Exception:
+        pass
+
+    for row_idx, source_dim in source_sheet.row_dimensions.items():
+        if row_idx in {30, 31, 32, 33, 38}:
+            continue
+        dest_dim = dest_sheet.row_dimensions[row_idx]
+        dest_dim.height = source_dim.height
+        dest_dim.hidden = source_dim.hidden
+        dest_dim.outline_level = source_dim.outline_level
+        dest_dim.collapsed = source_dim.collapsed
+
+    for merged_cell_range in source_sheet.merged_cells.ranges:
+        dest_sheet.merge_cells(str(merged_cell_range))
+
+    output = io.BytesIO()
+    dest_wb.save(output)
+    output.seek(0)
+    source_wb.close()
+    dest_wb.close()
+    return output.read()
+
+
+def generate_invoice_pdf(invoice_data: Dict) -> Optional[bytes]:
+    """
+    Generate a PDF invoice using WeasyPrint.
+    Returns the PDF file as bytes.
+    """
+    if not WEASYPRINT_AVAILABLE:
+        return None
+    
+    try:
+        # Compute a URI for the signature image. Prefer local file paths (dev),
+        # then fall back to a signed GCS URL if the image exists in the bucket.
+        signature_uri = ''
+        signature_candidates = [
+            Path(r"C:\Users\KIIT0001\Documents\Bills\Shakambhari Enterprises\signature.png"),
+            Path(__file__).resolve().parents[1] / 'signature.png',
+            Path(__file__).resolve().parents[1] / 'static' / 'signature.png',
+            Path(__file__).resolve().parents[0] / 'static' / 'signature.png',
+        ]
+
+        try:
+            if invoice_data.get('digitally_signed'):
+                for p in signature_candidates:
+                    try:
+                        if p and p.exists():
+                            signature_uri = p.as_uri()
+                            break
+                    except Exception:
+                        continue
+
+                # If no local file found, try checking Cloud Storage for a 'static/signature.png'
+                if not signature_uri:
+                    try:
+                        storage = get_cloud_storage()
+                        # Try common static paths in bucket
+                        for candidate in ('static/signature.png', 'signature.png', 'templates/signature.png'):
+                            data = storage.download_file(candidate)
+                            if data:
+                                # Use a short-lived signed URL for WeasyPrint to fetch
+                                signature_uri = storage.get_signed_url(candidate, expiration_minutes=60)
+                                break
+                    except Exception:
+                        signature_uri = ''
+        except Exception:
+            signature_uri = ''
+
+        # Render HTML template
+        html_content = render_template('invoice_pdf_template.html', invoice=invoice_data, signature_uri=signature_uri)
+
+        # Convert to PDF
+        pdf_bytes = HTML(string=html_content).write_pdf()
+        return pdf_bytes
+    except Exception as exc:
+        app.logger.exception('PDF generation failed: %s', exc)
+        return None
 
 
 def generate_pdf_from_excel(excel_bytes: bytes, excel_filename: str) -> Optional[bytes]:
@@ -1245,7 +1322,6 @@ def index():
             'index.html',
             buyer_profiles=[],
             transport_modes=[],
-            dispatch_addresses=list(getattr(GoogleSheetsDB, 'DEFAULT_DISPATCH_ADDRESSES', [])),
             today_date=today_date,
             suggested_invoice_number=suggestion,
             recent_invoices=[],
@@ -1256,76 +1332,29 @@ def index():
             pdfs_folder_url=f"{bucket_base}/pdfs/{project_suffix}" if bucket else '',
         )
 
-    try:
-        buyer_profiles = db.get_all_buyers()
-    except Exception as exc:
-        app.logger.warning("Could not fetch buyers: %s", exc)
-        buyer_profiles = []
-
-    try:
-        transport_modes = db.get_all_transport_modes()
-    except Exception as exc:
-        app.logger.warning("Could not fetch transport modes: %s", exc)
-        transport_modes = []
+    buyer_profiles = db.get_all_buyers()
+    transport_modes = db.get_all_transport_modes()
 
     buyer_profiles.sort(key=lambda p: p.get('buyer_name', '').lower())
 
-    try:
-        recent_invoices = _build_invoice_rows(db.get_all_invoices(limit=2000))
-    except Exception as exc:
-        app.logger.warning("Could not fetch recent invoices: %s", exc)
-        recent_invoices = []
-
-    invoice_transport_modes = [inv.get('transport_mode', '') for inv in recent_invoices if inv.get('transport_mode')]
+    invoice_transport_modes = [inv.get('transport_mode', '') for inv in db.get_all_invoices(limit=500)]
     combined_transport_modes = [m for m in (transport_modes + invoice_transport_modes) if m]
     transport_cores = list(set(extract_transport_core(m) for m in combined_transport_modes if extract_transport_core(m)))
     transport_cores.sort()
+
+    recent_invoices = _build_invoice_rows(db.get_all_invoices(limit=2000))
     try:
         storage_rows = get_cloud_storage().list_invoices(limit=2000)
         recent_invoices = _merge_with_storage_rows(recent_invoices, storage_rows)
     except Exception as exc:
         app.logger.warning('Could not list storage invoices for modal merge: %s', exc)
 
-    load_invoice_number = request.args.get('load', '').strip()
-    preload_invoice = None
-    if load_invoice_number:
-        if db is not None:
-            try:
-                preload_invoice = db.get_invoice(load_invoice_number)
-            except Exception as exc:
-                app.logger.warning("Could not fetch preload invoice %s from Sheets: %s", load_invoice_number, exc)
-        if not preload_invoice:
-            pattern = _safe_filename(load_invoice_number.replace('/', '-'), '')
-            storage = get_cloud_storage()
-            try:
-                blobs = list(storage.client.list_blobs(storage.bucket_name, prefix=f"{storage.INVOICES_FOLDER}Invoice_{pattern}"))
-                if blobs:
-                    name = blobs[0].name.replace(storage.INVOICES_FOLDER, '')
-                    file_bytes = storage.download_invoice_xlsx(name)
-                    if file_bytes:
-                        preload_invoice = _extract_invoice_data_from_xlsx_bytes(file_bytes, name)
-            except Exception as exc:
-                app.logger.warning("Could not fetch preload invoice %s from GCS: %s", load_invoice_number, exc)
-        if preload_invoice:
-            preload_invoice = _enrich_invoice_for_frontend(preload_invoice)
-
-    try:
-        dispatch_addresses = db.get_all_dispatch_addresses() if db else list(getattr(GoogleSheetsDB, 'DEFAULT_DISPATCH_ADDRESSES', []))
-    except Exception as exc:
-        app.logger.warning("Could not fetch dispatch addresses: %s", exc)
-        dispatch_addresses = list(getattr(GoogleSheetsDB, 'DEFAULT_DISPATCH_ADDRESSES', []))
-
-    for inv in recent_invoices:
-        sf = inv.get('ship_from_details')
-        if sf:
-            sf_str = '\n'.join(sf) if isinstance(sf, list) else str(sf).strip()
-            if sf_str and sf_str not in dispatch_addresses:
-                dispatch_addresses.append(sf_str)
+    load_invoice_number = request.args.get('load', '')
+    preload_invoice = db.get_invoice(load_invoice_number) if load_invoice_number else None
 
     return render_template('index.html',
                           buyer_profiles=buyer_profiles,
                           transport_modes=transport_cores,
-                          dispatch_addresses=dispatch_addresses,
                           today_date=today_date,
                           suggested_invoice_number=suggestion,
                           recent_invoices=recent_invoices,
@@ -1369,9 +1398,10 @@ def generate_invoice():
         tax_rate_igst = safe_float(request.form.get('tax_rate_igst', '5').strip(), 5.0)
         tax_rate_cgst = safe_float(request.form.get('tax_rate_cgst', '2.5').strip(), 2.5)
         tax_rate_sgst = safe_float(request.form.get('tax_rate_sgst', '2.5').strip(), 2.5)
-        ship_from_enabled = bool(request.form.get('ship_from_enabled'))
-        ship_from_text = request.form.get('ship_from', '').strip() if ship_from_enabled else ''
-        digitally_signed = bool(request.form.get('digitally_signed', True))
+        ship_from_text = request.form.get('ship_from', '').strip()
+        ship_to_enabled = bool(request.form.get('ship_to_enabled'))
+        ship_to_text = request.form.get('ship_to', '').strip() if ship_to_enabled else ''
+        digitally_signed = bool(request.form.get('digitally_signed'))
         
         # Get buyer profile
         buyer = db.get_buyer(buyer_profile_id)
@@ -1438,9 +1468,7 @@ def generate_invoice():
             return [line.strip() for line in re.split(r'[\r\n]+', value) if line.strip()]
 
         ship_from_lines = _normalized_multiline_lines(ship_from_text)
-        # Ship To always mirrors buyer details in the canonical template
-        ship_to_lines = buyer.get('buyer_details', [])
-        ship_to_enabled = True
+        ship_to_lines = _normalized_multiline_lines(ship_to_text)
 
         # Prepare invoice data
         invoice_data = {
@@ -1512,17 +1540,12 @@ def generate_invoice():
             'ship_to_enabled': ship_to_enabled,
             'ship_to_details': ship_to_lines,
             'digitally_signed': digitally_signed,
-            'delivery_charge': delivery_charge,
         }
-        # Save invoice record to Google Sheets (non-blocking if Sheets API is rate-limited)
-        try:
-            db.save_invoice(invoice_record)
-            if transport_mode:
-                db.add_transport_mode(transport_mode)
-            if ship_from_text:
-                db.add_dispatch_address(ship_from_text)
-        except Exception as sheet_err:
-            app.logger.warning("Could not sync invoice metadata to Google Sheets (rate limit/network): %s", sheet_err)
+        db.save_invoice(invoice_record)
+        
+        # Save new transport mode if provided
+        if transport_mode:
+            db.add_transport_mode(transport_mode)
         
         flash(f"Invoice {invoice_number} generated successfully!", "success")
 
@@ -1776,78 +1799,32 @@ def cleanup_profiles():
     return redirect(url_for('list_profiles'))
 
 
-def normalize_date_yyyy_mm_dd(date_str: Any) -> str:
-    """Normalize any date format to standard HTML5 input value YYYY-MM-DD."""
-    if not date_str:
-        return ''
-    date_str = str(date_str).strip()
-    if not date_str:
-        return ''
-    if re.match(r'^\d{4}-\d{2}-\d{2}$', date_str):
-        return date_str
-    for fmt in ('%d/%m/%Y', '%d-%m-%Y', '%d/%m/%y', '%d-%m-%y', '%Y/%m/%d'):
-        try:
-            return datetime.strptime(date_str, fmt).strftime('%Y-%m-%d')
-        except ValueError:
-            pass
-    try:
-        dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-        return dt.strftime('%Y-%m-%d')
-    except Exception:
-        pass
-    return date_str
+@app.route('/api/invoice/<path:invoice_number>')
+def api_get_invoice(invoice_number):
+    """API endpoint to get invoice data for loading."""
+    db = get_sheets_db_or_none()
+    if db is None:
+        return jsonify({'error': 'Sheets configuration is missing'}), 503
+    invoice = db.get_invoice(invoice_number)
+    
+    if not invoice:
+        return jsonify({'error': 'Invoice not found'}), 404
 
-
-def _enrich_invoice_for_frontend(invoice: Dict[str, Any]) -> Dict[str, Any]:
-    """Ensure complete metadata parity across all loading paths."""
-    safe_name = invoice.get('filename') or _filename_from_storage_url(invoice.get('file_url', ''), '.xlsx')
-    if not safe_name and invoice.get('invoice_number'):
-        inv_clean = _safe_filename(str(invoice.get('invoice_number')).replace('/', '-'), '')
-        try:
-            storage = get_cloud_storage()
-            blobs = list(storage.client.list_blobs(storage.bucket_name, prefix=f"{storage.INVOICES_FOLDER}Invoice_{inv_clean}"))
-            if blobs:
-                safe_name = blobs[0].name.replace(storage.INVOICES_FOLDER, '')
-        except Exception:
-            pass
-
-    if safe_name:
-        invoice['filename'] = safe_name
-        invoice['pdf_filename'] = safe_name.replace('.xlsx', '.pdf')
-        try:
-            storage = get_cloud_storage()
-            file_bytes = storage.download_invoice_xlsx(safe_name)
-            if file_bytes:
-                file_data = _extract_invoice_data_from_xlsx_bytes(file_bytes, safe_name)
-                if file_data.get('delivery_charge') is not None:
-                    invoice['delivery_charge'] = safe_float(file_data.get('delivery_charge'), 0.0)
-                if file_data.get('invoice_date'):
-                    invoice['invoice_date'] = file_data['invoice_date']
-                if file_data.get('ewaybill_number'):
-                    invoice['ewaybill_number'] = file_data['ewaybill_number']
-                if file_data.get('ewaybill_date'):
-                    invoice['ewaybill_date'] = file_data['ewaybill_date']
-                if file_data.get('items'):
-                    invoice['items'] = file_data['items']
-                if file_data.get('transport_mode'):
-                    invoice['transport_mode'] = file_data['transport_mode']
-                if file_data.get('ship_from_details'):
-                    invoice['ship_from_details'] = file_data['ship_from_details']
-                if file_data.get('ship_to_details'):
-                    invoice['ship_to_details'] = file_data['ship_to_details']
-                if file_data.get('tax_type'):
-                    invoice['tax_type'] = file_data['tax_type']
-                    invoice['display_tax_type'] = file_data['tax_type']
-        except Exception as exc:
-            app.logger.warning("Could not enrich invoice from XLSX %s: %s", safe_name, exc)
-
-    # Standardize dates for HTML5 date input
-    invoice['invoice_date'] = normalize_date_yyyy_mm_dd(invoice.get('invoice_date', ''))
-    invoice['ewaybill_date'] = normalize_date_yyyy_mm_dd(invoice.get('ewaybill_date', ''))
-    invoice['delivery_charge'] = safe_float(invoice.get('delivery_charge', 0.0), 0.0)
+    invoice['filename'] = _filename_from_storage_url(invoice.get('file_url', ''), '.xlsx')
+    invoice['pdf_filename'] = _filename_from_storage_url(invoice.get('pdf_url', ''), '.pdf')
     invoice['transport_mode'] = extract_transport_core(invoice.get('transport_mode', ''))
 
-    # Parse bags from items descriptions if needed
+    tax_amt = float(invoice.get('tax_amount', 0) or 0)
+    subt = float(invoice.get('subtotal', 0) or 0)
+    if tax_amt > 0:
+        est_dc = (tax_amt / 0.05) - subt
+        if abs(est_dc - round(est_dc)) < 0.2:
+            invoice['delivery_charge'] = float(round(est_dc))
+        else:
+            invoice['delivery_charge'] = round(est_dc, 2)
+    else:
+        invoice['delivery_charge'] = 0.0
+
     for item in invoice.get('items', []):
         desc = item.get('description', '')
         bag_match = re.search(r'\(\s*(\d+(?:\.\d+)?)\s*Bags?\s*\)', desc, re.IGNORECASE)
@@ -1855,72 +1832,22 @@ def _enrich_invoice_for_frontend(invoice: Dict[str, Any]) -> Dict[str, Any]:
             item['bags'] = bag_match.group(1)
             item['description'] = re.sub(r'\s*\(\s*\d+(?:\.\d+)?\s*Bags?\s*\)', '', desc, flags=re.IGNORECASE).strip()
 
-    # Buyer profile match
-    try:
-        db = get_sheets_db_or_none()
-        if db:
-            buyers = db.get_all_buyers()
-            matched = _match_buyer_profile(invoice, buyers)
-            if matched:
-                invoice['buyer_profile_id'] = matched.get('profile_id', '')
-                invoice['buyer_name'] = matched.get('buyer_name') or invoice.get('buyer_name', '')
-                invoice['buyer_gstin'] = matched.get('gstin') or invoice.get('buyer_gstin', '')
-                invoice['buyer_details'] = matched.get('buyer_details', invoice.get('buyer_details', []))
-    except Exception as exc:
-        app.logger.warning("Could not match buyer profile: %s", exc)
-
-    return invoice
-
-
-@app.route('/api/invoices')
-def api_get_invoices():
-    """API endpoint to get latest invoice records in real-time."""
-    db = get_sheets_db_or_none()
-    try:
-        sheet_invoices = db.get_all_invoices(limit=2000) if db else []
-    except Exception as exc:
-        app.logger.warning("Could not fetch invoices: %s", exc)
-        sheet_invoices = []
-
-    recent_invoices = _build_invoice_rows(sheet_invoices)
-    try:
-        storage_rows = get_cloud_storage().list_invoices(limit=2000)
-        recent_invoices = _merge_with_storage_rows(recent_invoices, storage_rows)
-    except Exception as exc:
-        app.logger.warning("Could not list storage invoices: %s", exc)
-
-    return jsonify({'success': True, 'invoices': recent_invoices})
-
-
-@app.route('/api/invoice/<path:invoice_number>')
-def api_get_invoice(invoice_number):
-    """API endpoint to get invoice data for loading."""
-    db = get_sheets_db_or_none()
-    invoice = None
-    if db is not None:
-        try:
-            invoice = db.get_invoice(invoice_number)
-        except Exception as exc:
-            app.logger.warning("Could not fetch invoice from Sheets: %s", exc)
-
-    if not invoice:
-        # Fallback search by filename in GCS
-        pattern = _safe_filename(invoice_number.replace('/', '-'), '')
-        storage = get_cloud_storage()
-        try:
-            blobs = list(storage.client.list_blobs(storage.bucket_name, prefix=f"{storage.INVOICES_FOLDER}Invoice_{pattern}"))
-            if blobs:
-                name = blobs[0].name.replace(storage.INVOICES_FOLDER, '')
-                file_bytes = storage.download_invoice_xlsx(name)
-                if file_bytes:
-                    invoice = _extract_invoice_data_from_xlsx_bytes(file_bytes, name)
-        except Exception:
-            pass
-
-    if not invoice:
-        return jsonify({'error': 'Invoice not found'}), 404
-
-    invoice = _enrich_invoice_for_frontend(invoice)
+    buyers = db.get_all_buyers()
+    matched_buyer = _match_buyer_profile(invoice, buyers)
+    if matched_buyer:
+        invoice['buyer_profile_id'] = matched_buyer.get('profile_id', '')
+        invoice['buyer_name'] = matched_buyer.get('buyer_name') or invoice.get('buyer_name', '')
+        invoice['buyer_gstin'] = matched_buyer.get('gstin') or invoice.get('buyer_gstin', '')
+        invoice['buyer_details'] = matched_buyer.get('buyer_details', [])
+    else:
+        if not isinstance(invoice.get('buyer_details'), list):
+            fallback_details = []
+            if invoice.get('buyer_name'):
+                fallback_details.extend(['Buyer :', invoice.get('buyer_name')])
+            if invoice.get('buyer_gstin'):
+                fallback_details.append(f"GSTIN - {invoice.get('buyer_gstin')}")
+            invoice['buyer_details'] = fallback_details
+    
     return jsonify(invoice)
 
 
@@ -1938,185 +1865,15 @@ def api_get_invoice_by_file(filename):
         app.logger.exception('Failed to parse XLSX %s: %s', safe_name, exc)
         return jsonify({'error': 'Failed to parse invoice file'}), 500
 
-    invoice['filename'] = safe_name
-    invoice['pdf_filename'] = safe_name.replace('.xlsx', '.pdf')
-    invoice = _enrich_invoice_for_frontend(invoice)
+    buyers = get_sheets_db().get_all_buyers()
+    matched_buyer = _match_buyer_profile(invoice, buyers)
+    if matched_buyer:
+        invoice['buyer_profile_id'] = matched_buyer.get('profile_id', '')
+        invoice['buyer_name'] = matched_buyer.get('buyer_name') or invoice.get('buyer_name', '')
+        invoice['buyer_gstin'] = matched_buyer.get('gstin') or invoice.get('buyer_gstin', '')
+        invoice['buyer_details'] = matched_buyer.get('buyer_details', invoice.get('buyer_details', []))
+
     return jsonify(invoice)
-
-
-@app.route('/api/ai/parse-bill', methods=['POST'])
-def api_ai_parse_bill():
-    """
-    Extract invoice information from multiple uploaded pictures (rough slips, chits, visiting cards)
-    and/or user notes using Google Gemini Flash.
-    Designed for elderly-friendly usage with free-tier rate limit efficiency.
-    """
-    data = request.get_json(silent=True) or {}
-    images = data.get('images', [])  # List of {data: base64_str, mime_type: 'image/jpeg'}
-    prompt_text = data.get('prompt', '').strip()
-    create_buyer_if_new = data.get('create_new_buyer', True)
-
-    api_key = (
-        request.headers.get('X-Gemini-Key') or 
-        data.get('api_key') or 
-        os.environ.get('GEMINI_API_KEY', '')
-    ).strip()
-
-    if not api_key:
-        return jsonify({
-            'success': False,
-            'error': 'Gemini API key is required. Please enter your free key (get one free at https://aistudio.google.com/apikey).'
-        }), 400
-
-    if not images and not prompt_text:
-        return jsonify({'success': False, 'error': 'Please provide at least one image or typed note.'}), 400
-
-    # Retrieve existing buyers and transport modes for accurate entity matching
-    known_buyers = []
-    known_transports = []
-    try:
-        db = get_sheets_db_or_none()
-        if db:
-            known_buyers = [
-                {'profile_id': b.get('profile_id'), 'buyer_name': b.get('buyer_name'), 'gstin': b.get('gstin')}
-                for b in db.get_all_buyers() if b.get('buyer_name')
-            ]
-            known_transports = db.get_all_transport_modes()
-    except Exception as e:
-        app.logger.warning("Could not fetch DB records for AI context: %s", e)
-
-    parts = []
-
-    # Add images
-    for img in images:
-        raw_b64 = img.get('data', '')
-        if ',' in raw_b64:
-            raw_b64 = raw_b64.split(',', 1)[1]
-        mtype = img.get('mime_type', 'image/jpeg')
-        if raw_b64:
-            parts.append({
-                'inline_data': {
-                    'mime_type': mtype,
-                    'data': raw_b64
-                }
-            })
-
-    buyers_summary = [f"{b['buyer_name']} (ID: {b['profile_id']}, GSTIN: {b.get('gstin', '')})" for b in known_buyers[:50]]
-    instruction = (
-        "You are an expert billing assistant for Shakambhari Enterprises, an aluminium utensils manufacturing & trading business in Liluah/Howrah, West Bengal.\n"
-        "Your task is to extract billing details from the provided picture(s) (rough note, paper slip, weight chit, challan, visiting card) and user text notes.\n\n"
-        f"KNOWN BUYERS IN DATABASE:\n{json.dumps(buyers_summary, ensure_ascii=False)}\n\n"
-        f"KNOWN TRANSPORTS:\n{json.dumps(known_transports, ensure_ascii=False)}\n\n"
-        "INSTRUCTIONS:\n"
-        "1. Check if the buyer matches any known buyer in the database. If it matches, set 'matched_profile_id' to that ID, 'buyer_name' to that buyer name, and 'is_new_buyer': false.\n"
-        "2. If it is a new party or visiting card not in the database, set 'is_new_buyer': true, extract full 'buyer_name', format 'buyer_details' (array of address lines: Name, Address lines, City/Pincode, State & Code, GSTIN), and extract 'gstin', 'state', 'state_code'.\n"
-        "3. Match transport to known transports if similar (e.g. 'Gaya transport' -> 'By Gaya Aurangabad Transport', 'Kolkata Assam' -> 'By Kolkata Assam Transways').\n"
-        "4. Extract item line items: description (default 'Aluminium Utensils' if utensils/bartan mentioned), bags (number of bags), quantity (numeric kg/wt), rate (numeric rate per kg), hsn ('76151030' for aluminium utensils).\n"
-        "5. Tax type: 'IGST' if buyer is outside West Bengal (State code != 19, e.g. Bihar 10, Assam 18, Jharkhand 20) or unknown; 'CGST_SGST' if inside West Bengal (State code 19).\n"
-        "6. If user provided a follow-up or correction prompt, prioritize those corrections.\n\n"
-        "OUTPUT STRICT JSON ONLY (NO CODE FENCES):\n"
-        "{\n"
-        '  "buyer_name": "...",\n'
-        '  "matched_profile_id": "..." or null,\n'
-        '  "is_new_buyer": false,\n'
-        '  "buyer_details": ["Line 1", "Line 2", ...],\n'
-        '  "gstin": "...",\n'
-        '  "state": "...",\n'
-        '  "state_code": "...",\n'
-        '  "transport_mode": "...",\n'
-        '  "delivery_charge": 0.0,\n'
-        '  "tax_type": "IGST" or "CGST_SGST",\n'
-        '  "ewaybill_number": "",\n'
-        '  "items": [\n'
-        '    {\n'
-        '      "description": "Aluminium Utensils",\n'
-        '      "bags": "2",\n'
-        '      "quantity": 89.080,\n'
-        '      "rate": 400.00,\n'
-        '      "hsn": "76151030"\n'
-        '    }\n'
-        '  ],\n'
-        '  "notes": "Short summary of extracted data"\n'
-        "}"
-    )
-
-    user_text = prompt_text if prompt_text else "Extract the invoice details from these rough slips/pictures."
-    parts.append({'text': f"{instruction}\n\nUSER PROMPT / ADDITIONAL NOTES:\n{user_text}"})
-
-    gemini_payload = {
-        "contents": [{"parts": parts}],
-        "generationConfig": {
-            "temperature": 0.1,
-            "responseMimeType": "application/json"
-        }
-    }
-
-    # Try gemini-2.0-flash first, fallback to gemini-1.5-flash
-    models = ["gemini-2.0-flash", "gemini-1.5-flash"]
-    last_error = ""
-
-    for model in models:
-        api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-        try:
-            req = urllib.request.Request(
-                api_url,
-                data=json.dumps(gemini_payload).encode('utf-8'),
-                headers={'Content-Type': 'application/json'},
-                method='POST'
-            )
-            with urllib.request.urlopen(req, timeout=45) as resp:
-                res_body = resp.read().decode('utf-8')
-                res_data = json.loads(res_body)
-                candidates = res_data.get('candidates', [])
-                if not candidates:
-                    last_error = "Gemini returned no candidates."
-                    continue
-                content = candidates[0].get('content', {})
-                resp_parts = content.get('parts', [])
-                if not resp_parts:
-                    last_error = "Gemini returned empty parts."
-                    continue
-                text_out = resp_parts[0].get('text', '').strip()
-                # Clean code fences if present
-                clean_json_str = re.sub(r'^```(?:json)?\s*', '', text_out, flags=re.MULTILINE)
-                clean_json_str = re.sub(r'\s*```$', '', clean_json_str, flags=re.MULTILINE).strip()
-                extracted = json.loads(clean_json_str)
-
-                # If new buyer and auto-save enabled, persist to Google Sheets
-                if extracted.get('is_new_buyer') and extracted.get('buyer_name') and create_buyer_if_new:
-                    new_profile_id = f"buyer_{int(time.time())}_{uuid.uuid4().hex[:4]}"
-                    b_lines = extracted.get('buyer_details') or [extracted.get('buyer_name')]
-                    new_profile = {
-                        'profile_id': new_profile_id,
-                        'buyer_name': extracted.get('buyer_name', '').strip(),
-                        'buyer_details': b_lines,
-                        'gstin': extracted.get('gstin', '').strip().upper(),
-                        'state': extracted.get('state', ''),
-                        'state_code': extracted.get('state_code', ''),
-                        'default_tax_type': extracted.get('tax_type', 'IGST')
-                    }
-                    try:
-                        db = get_sheets_db_or_none()
-                        if db:
-                            db.save_buyer(new_profile)
-                    except Exception as err:
-                        app.logger.warning("Could not auto-save new buyer profile: %s", err)
-                    extracted['matched_profile_id'] = new_profile_id
-                    extracted['created_profile'] = new_profile
-
-                return jsonify({'success': True, 'data': extracted, 'model': model})
-
-        except urllib.error.HTTPError as he:
-            err_msg = he.read().decode('utf-8', errors='ignore')
-            app.logger.warning("Gemini %s HTTP %s: %s", model, he.code, err_msg)
-            last_error = f"HTTP {he.code}: {err_msg}"
-            if he.code == 429:
-                return jsonify({'success': False, 'error': 'Gemini free rate limit reached (15 requests/min). Please pause for 10-15 seconds and try again.'}), 429
-        except Exception as exc:
-            app.logger.warning("Gemini %s error: %s", model, exc)
-            last_error = str(exc)
-
-    return jsonify({'success': False, 'error': f'Failed to process slip with AI: {last_error}'}), 500
 
 
 @app.errorhandler(404)
