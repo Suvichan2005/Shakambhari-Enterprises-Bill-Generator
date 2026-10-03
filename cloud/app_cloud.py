@@ -690,26 +690,40 @@ def _financial_year_suffix(today: datetime = None) -> str:
 
 
 def suggest_next_invoice_number() -> str:
-    """Suggest the next invoice number based on the last one."""
+    """Suggest the next sequential invoice number based on highest number in current FY."""
+    fy = _financial_year_suffix()
     db = get_sheets_db_or_none()
-    if db is None:
-        fy = _financial_year_suffix()
-        return f"1{fy}"
+    storage = get_cloud_storage()
+    
+    max_num = 0
+    all_invoices = []
+    
+    if db is not None:
+        try:
+            all_invoices.extend(db.get_all_invoices(limit=2000))
+        except Exception as exc:
+            app.logger.warning("Could not fetch invoices from DB for suggestion: %s", exc)
+            
+    if storage is not None:
+        try:
+            all_invoices.extend(storage.list_invoices(limit=2000))
+        except Exception as exc:
+            app.logger.warning("Could not fetch invoices from storage for suggestion: %s", exc)
+            
+    for inv in all_invoices:
+        inv_str = str(inv.get('invoice_number', '')).strip()
+        if '2026-27' in inv_str or '26-27' in inv_str:
+            m = re.match(r'^0*(\d+)', inv_str)
+            if m:
+                val = int(m.group(1))
+                # Skip test bill 99
+                if val != 99 and val > max_num:
+                    max_num = val
 
-    last_num = db.get_last_invoice_number()
+    if max_num > 0:
+        return f"{max_num + 1}{fy}"
     
-    if not last_num:
-        fy = _financial_year_suffix()
-        return f"1{fy}"
-    
-    # Extract numeric part
-    match = re.match(r'^(\d+)', last_num)
-    if match:
-        num = int(match.group(1)) + 1
-        fy = _financial_year_suffix()
-        return f"{num}{fy}"
-    
-    return last_num
+    return f"1{fy}"
 
 
 def format_date_for_invoice(date_str: str) -> str:

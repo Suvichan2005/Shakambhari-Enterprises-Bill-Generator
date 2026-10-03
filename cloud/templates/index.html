@@ -65,21 +65,24 @@
         }
 
         /* Top Glass Navigation Bar */
+        /* Modern Glass Navigation Bar */
         .navbar {
             position: sticky;
             top: 0;
             z-index: 50;
             backdrop-filter: blur(16px);
             -webkit-backdrop-filter: blur(16px);
-            background: rgba(255, 255, 255, 0.92);
+            background: rgba(255, 255, 255, 0.94);
             border-bottom: 1px solid var(--slate-200);
             box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+            height: 56px;
         }
 
         .nav-container {
             max-width: 1440px;
+            height: 100%;
             margin: 0 auto;
-            padding: 10px 20px;
+            padding: 0 20px;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -92,38 +95,41 @@
             gap: 10px;
             text-decoration: none;
             color: inherit;
-        }
-
-        .brand-logo {
-            width: 40px;
-            height: 40px;
-            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-            color: white;
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 20px;
-            box-shadow: 0 4px 10px rgba(79, 70, 229, 0.3);
             flex-shrink: 0;
         }
 
+        .brand-logo {
+            width: 34px;
+            height: 34px;
+            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            color: white;
+            border-radius: 9px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 17px;
+            box-shadow: 0 2px 8px rgba(79, 70, 229, 0.28);
+            flex-shrink: 0;
+        }
+
+        .brand-details {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
         .brand-title {
-            font-size: 1.15rem;
+            font-size: 1.05rem;
             font-weight: 800;
             color: var(--slate-900);
             letter-spacing: -0.02em;
             line-height: 1.2;
         }
 
-        .brand-sub {
+        .brand-tags {
             display: flex;
             align-items: center;
             gap: 6px;
-            font-size: 0.76rem;
-            color: var(--slate-500);
-            font-weight: 500;
-            margin-top: 2px;
         }
 
         .pill-badge {
@@ -132,14 +138,14 @@
             gap: 5px;
             padding: 2px 7px;
             border-radius: 9999px;
-            font-size: 0.7rem;
+            font-size: 0.72rem;
             font-weight: 600;
         }
 
         .pill-fy {
-            background: #f1f5f9;
-            color: #475569;
-            border: 1px solid #e2e8f0;
+            background: var(--slate-100);
+            color: var(--slate-600);
+            border: 1px solid var(--slate-200);
         }
 
         .pill-online {
@@ -169,7 +175,14 @@
             display: flex;
             align-items: center;
             gap: 8px;
-            flex-wrap: wrap;
+            flex-shrink: 0;
+        }
+
+        .nav-divider {
+            width: 1px;
+            height: 20px;
+            background: var(--slate-200);
+            margin: 0 2px;
         }
 
         .btn {
@@ -230,42 +243,254 @@
             border-color: #fca5a5;
         }
 
-        /* Mobile View Switcher (Visible only on phone screens) */
-        .mobile-view-switcher {
+        .btn-label-mobile {
             display: none;
-            background: white;
-            border-bottom: 1px solid var(--slate-200);
-            padding: 8px 16px;
-            position: sticky;
-            top: 61px;
-            z-index: 45;
         }
 
-        .mobile-tab-bar {
+        @media (max-width: 768px) {
+            .navbar {
+                height: 48px;
+            }
+
+            .nav-container {
+                padding: 0 12px;
+                gap: 8px;
+            }
+
+            .brand-logo {
+                width: 28px;
+                height: 28px;
+                font-size: 14px;
+                border-radius: 7px;
+            }
+
+            .brand-title {
+                font-size: 0.94rem;
+                max-width: 145px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            .brand-tags {
+                display: none;
+            }
+
+            .nav-actions {
+                gap: 6px;
+                flex-wrap: nowrap;
+            }
+
+            .nav-divider {
+                display: none;
+            }
+
+            .btn-label-desktop {
+                display: none;
+            }
+
+            .btn-label-mobile {
+                display: inline;
+            }
+
+            .btn-nav-ai {
+                padding: 5px 8px !important;
+                font-size: 0.8rem !important;
+                height: 32px;
+                min-height: 32px;
+                border-radius: 7px !important;
+            }
+
+            .btn-nav-icon {
+                width: 32px !important;
+                height: 32px !important;
+                min-height: 32px !important;
+                padding: 0 !important;
+                display: inline-flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                border-radius: 7px !important;
+                font-size: 0.95rem;
+            }
+        }
+
+        /* AI Hero Card (Above Step 1 on Form) */
+        .ai-hero-card {
+            background: linear-gradient(135deg, #eef2ff 0%, #faf5ff 100%);
+            border: 1.5px solid #c7d2fe;
+            border-radius: var(--radius-lg);
+            padding: 14px 18px;
             display: flex;
-            background: var(--slate-100);
-            border-radius: 10px;
-            padding: 3px;
-        }
-
-        .mobile-tab-btn {
-            flex: 1;
-            padding: 8px 12px;
-            font-size: 0.9rem;
-            font-weight: 600;
-            border: none;
-            background: transparent;
-            color: var(--slate-600);
-            border-radius: 8px;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            box-shadow: 0 2px 10px rgba(99, 102, 241, 0.08);
             cursor: pointer;
-            transition: all 0.2s ease;
-            text-align: center;
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
-        .mobile-tab-btn.active {
+        .ai-hero-card:hover {
+            border-color: #818cf8;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 18px rgba(99, 102, 241, 0.14);
+        }
+
+        .ai-hero-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .ai-hero-icon-pulse {
+            width: 42px;
+            height: 42px;
+            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            color: white;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+            flex-shrink: 0;
+        }
+
+        .ai-hero-title {
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: #312e81;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .ai-hero-desc {
+            font-size: 0.82rem;
+            color: #4338ca;
+            margin-top: 2px;
+        }
+
+        .btn-ai-hero-action {
+            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: var(--radius-md);
+            font-weight: 700;
+            font-size: 0.9rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            white-space: nowrap;
+            box-shadow: 0 3px 10px rgba(99, 102, 241, 0.3);
+            flex-shrink: 0;
+        }
+
+        @media (max-width: 640px) {
+            .ai-hero-card {
+                padding: 12px 14px;
+                flex-direction: column;
+                align-items: stretch;
+                gap: 10px;
+            }
+            .btn-ai-hero-action {
+                width: 100%;
+                justify-content: center;
+                padding: 10px;
+            }
+        }
+
+        /* Step Action Buttons & Subtle Links */
+        .btn-step-action {
             background: white;
+            color: var(--slate-700);
+            border: 1.5px solid var(--slate-200);
+            padding: 6px 12px;
+            border-radius: var(--radius-md);
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.15s ease;
+        }
+
+        .btn-step-action:hover {
+            background: var(--slate-50);
+            border-color: var(--slate-300);
+            color: var(--slate-900);
+        }
+
+        .btn-subtle-link {
+            background: transparent;
+            border: none;
             color: var(--primary);
-            box-shadow: var(--shadow-sm);
+            font-size: 0.78rem;
+            font-weight: 600;
+            cursor: pointer;
+            padding: 0 4px;
+            text-decoration: underline;
+            text-underline-offset: 2px;
+        }
+
+        .btn-subtle-link:hover {
+            color: var(--primary-hover);
+        }
+
+        /* Custom Dropdown System (Used for Transport & Dispatch From) */
+        .dropdown-wrapper {
+            position: relative;
+            width: 100%;
+        }
+
+        .dropdown-list {
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            right: 0;
+            background: white;
+            border: 1.5px solid var(--slate-200);
+            border-radius: var(--radius-md);
+            box-shadow: var(--shadow-modal);
+            max-height: 240px;
+            overflow-y: auto;
+            z-index: 45;
+            display: none;
+        }
+
+        .dropdown-list.show {
+            display: block;
+        }
+
+        .dropdown-item {
+            padding: 10px 14px;
+            cursor: pointer;
+            border-bottom: 1px solid var(--slate-100);
+            font-size: 0.92rem;
+            color: var(--slate-800);
+            transition: background 0.15s ease;
+        }
+
+        .dropdown-item:last-child {
+            border-bottom: none;
+        }
+
+        .dropdown-item:hover {
+            background: var(--primary-light);
+            color: var(--primary);
+        }
+
+        .dropdown-item-empty {
+            color: var(--slate-400);
+            font-style: italic;
+            cursor: default;
+        }
+
+        .dropdown-item-empty:hover {
+            background: white;
+            color: var(--slate-400);
         }
 
         /* Flash Message Banner */
@@ -309,12 +534,8 @@
                 padding: 0 14px;
             }
 
-            .mobile-view-switcher {
-                display: block;
-            }
-
             .preview-sticky-wrap {
-                display: none; /* Controlled by mobile tabs */
+                display: none; /* Controlled by bottom dock toggle */
             }
 
             .preview-sticky-wrap.mobile-active {
@@ -1012,13 +1233,13 @@
             bottom: 0;
             left: 0;
             right: 0;
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
+            background: rgba(255, 255, 255, 0.96);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
             border-top: 1px solid var(--slate-200);
-            padding: 10px 16px;
+            padding: 8px 12px;
             z-index: 60;
-            box-shadow: 0 -4px 15px rgba(0,0,0,0.06);
+            box-shadow: 0 -4px 20px rgba(0,0,0,0.08);
         }
 
         @media (max-width: 900px) {
@@ -1026,44 +1247,73 @@
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
-                gap: 12px;
+                gap: 8px;
             }
         }
 
         .mobile-total-pill {
             display: flex;
             flex-direction: column;
+            min-width: 75px;
         }
 
         .mobile-total-label {
-            font-size: 0.7rem;
+            font-size: 0.68rem;
             color: var(--slate-500);
             font-weight: 600;
             text-transform: uppercase;
         }
 
         .mobile-total-value {
-            font-size: 1.2rem;
+            font-size: 1.15rem;
             font-weight: 800;
             color: var(--success);
             font-family: 'JetBrains Mono', monospace;
             line-height: 1.1;
         }
 
+        .mobile-dock-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-dock-view-toggle {
+            background: var(--slate-100);
+            color: var(--slate-700);
+            border: 1.5px solid var(--slate-200);
+            padding: 8px 12px;
+            border-radius: 9px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            white-space: nowrap;
+            min-height: 42px;
+            transition: all 0.15s ease;
+        }
+
+        .btn-dock-view-toggle:active {
+            background: var(--slate-200);
+        }
+
         .btn-mobile-generate {
             background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
             color: white;
             border: none;
-            padding: 12px 18px;
-            border-radius: 10px;
+            padding: 9px 16px;
+            border-radius: 9px;
             font-weight: 700;
-            font-size: 0.95rem;
+            font-size: 0.92rem;
             cursor: pointer;
             box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
             display: flex;
             align-items: center;
             gap: 6px;
             white-space: nowrap;
+            min-height: 42px;
         }
 
         /* Modals */
@@ -1382,10 +1632,9 @@
         <div class="nav-container">
             <a href="/" class="brand-block">
                 <div class="brand-logo">📑</div>
-                <div>
-                    <div class="brand-title">{{ app_settings.company_name if app_settings else 'Shakambhari Enterprises' }}</div>
-                    <div class="brand-sub">
-                        <span>GST Billing</span>
+                <div class="brand-details">
+                    <span class="brand-title">{{ app_settings.company_name if app_settings else 'Shakambhari Enterprises' }}</span>
+                    <div class="brand-tags">
                         <span class="pill-badge pill-fy">{{ app_settings.financial_year if app_settings else '2026-27' }}</span>
                         <span class="pill-badge pill-online"><span class="pulse-dot"></span> Synced</span>
                     </div>
@@ -1393,37 +1642,27 @@
             </a>
 
             <div class="nav-actions">
-                <button type="button" class="btn btn-ai-glow" onclick="openAiModal()">
+                <button type="button" class="btn btn-ai-glow btn-nav-ai" onclick="openAiModal()" title="AI Slip Assistant">
                     <span>✨</span>
-                    <span>Smart Assistant</span>
+                    <span class="btn-label-desktop">Smart Assistant</span>
+                    <span class="btn-label-mobile">AI</span>
                 </button>
-                <button type="button" class="btn btn-nav-outline" onclick="openInvoiceModal()">
+                <button type="button" class="btn btn-nav-outline btn-nav-icon" onclick="openInvoiceModal()" title="Past Invoices">
                     <span>📁</span>
-                    <span>Past Invoices</span>
+                    <span class="btn-label-desktop">Past Invoices</span>
                 </button>
-                <button type="button" class="btn btn-nav-outline" onclick="openSettingsModal()" title="Settings">
+                <div class="nav-divider"></div>
+                <button type="button" class="btn btn-nav-outline btn-nav-icon" onclick="openSettingsModal()" title="Settings">
                     <span>⚙️</span>
                 </button>
-                <form action="{{ url_for('logout') }}" method="POST" style="display:inline;">
-                    <button type="submit" class="btn btn-logout" title="Sign Out">
+                <form action="{{ url_for('logout') }}" method="POST" style="display:inline; margin:0;">
+                    <button type="submit" class="btn btn-logout btn-nav-icon" title="Sign Out">
                         <span>🚪</span>
                     </button>
                 </form>
             </div>
         </div>
     </header>
-
-    <!-- MOBILE VIEW SWITCHER (Only visible on phones) -->
-    <div class="mobile-view-switcher">
-        <div class="mobile-tab-bar">
-            <button type="button" class="mobile-tab-btn active" id="tab_btn_form" onclick="switchMobileView('form')">
-                📝 Bill Form
-            </button>
-            <button type="button" class="mobile-tab-btn" id="tab_btn_slip" onclick="switchMobileView('slip')">
-                👁️ Invoice Slip Preview
-            </button>
-        </div>
-    </div>
 
     <!-- FLASH MESSAGES -->
     {% with messages = get_flashed_messages(with_categories=true) %}
@@ -1444,6 +1683,22 @@
 
         <!-- LEFT COLUMN: BILLING FORM -->
         <div class="form-column" id="mobile_form_col">
+
+            <!-- AI SMART SLIP ASSISTANT HERO CARD -->
+            <div class="ai-hero-card" onclick="openAiModal()">
+                <div class="ai-hero-left">
+                    <div class="ai-hero-icon-pulse">✨</div>
+                    <div>
+                        <div class="ai-hero-title">Smart Slip Assistant</div>
+                        <div class="ai-hero-desc">Snap rough slip / card or speak into mic — AI reads and auto-fills the bill</div>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-ai-hero-action" onclick="event.stopPropagation(); openAiModal()">
+                    <span>📷</span>
+                    <span>Scan or Speak</span>
+                </button>
+            </div>
+
             <form action="{{ url_for('generate_invoice') }}" method="POST" id="invoiceForm">
 
                 <!-- STEP 1: INVOICE & LOGISTICS -->
@@ -1456,13 +1711,20 @@
                                 <p class="step-desc">Invoice number, date, dispatch origin, and transport</p>
                             </div>
                         </div>
+                        <button type="button" class="btn-step-action" onclick="openInvoiceModal()" title="View and copy past bills">
+                            <span>📁</span>
+                            <span>Past Invoices</span>
+                        </button>
                     </div>
 
                     <div class="form-grid">
                         <div class="grid-2">
-                            <!-- Clean Invoice Number Input (NO auto next button clutter) -->
+                            <!-- Clean Invoice Number Input with quick past bills link -->
                             <div class="field-group">
-                                <label class="field-label" for="invoice_number">Invoice Number</label>
+                                <div class="field-label">
+                                    <label for="invoice_number">Invoice Number</label>
+                                    <button type="button" class="btn-subtle-link" onclick="openInvoiceModal()">📁 Past bills</button>
+                                </div>
                                 <input type="text" name="invoice_number" id="invoice_number" class="field-input mono" value="{{ suggested_invoice_number }}" placeholder="e.g. 62/2026-27" required oninput="updatePreview()">
                             </div>
 
@@ -1479,7 +1741,7 @@
                             </div>
                         </div>
 
-                        <!-- Dispatch From: Checkbox, Dropdown of Past Addresses, plus Editable Textarea -->
+                        <!-- Dispatch From: Checkbox and Custom Interactive Dropdown UI -->
                         <div class="field-group" style="background: var(--slate-50); padding: 14px; border-radius: var(--radius-md); border: 1px solid var(--slate-200);">
                             <label class="checkbox-container">
                                 <input type="checkbox" id="ship_from_enabled" name="ship_from_enabled" class="checkbox-input" onchange="toggleShipFromSection(this.checked)">
@@ -1488,16 +1750,13 @@
                             
                             <div id="ship_from_container" style="display: none; margin-top: 12px;">
                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                                    <label class="field-label" for="ship_from_preset">Past Dispatch Origins:</label>
+                                    <label class="field-label" for="ship_from" style="margin: 0;">Warehouse Address:</label>
                                     <button type="button" class="btn-inline-pill" onclick="clearShipFrom()">Clear</button>
                                 </div>
-                                <select id="ship_from_preset" class="field-select" style="margin-bottom: 8px;" onchange="selectPastDispatch(this.value)">
-                                    <option value="">-- Choose from past dispatch addresses --</option>
-                                    {% for addr in dispatch_addresses %}
-                                        <option value="{{ addr }}">{{ addr.split('\n')[0] }} ({{ addr.split('\n')[1] if addr.split('\n')|length > 1 else '' }})</option>
-                                    {% endfor %}
-                                </select>
-                                <textarea name="ship_from" id="ship_from" class="field-textarea" rows="3" placeholder="Select from above or type warehouse address..." oninput="updatePreview()"></textarea>
+                                <div class="dropdown-wrapper">
+                                    <textarea name="ship_from" id="ship_from" class="field-textarea" rows="3" placeholder="Click or type to pick past warehouse address, or enter new..." oninput="handleShipFromInput()" onfocus="showShipFromDropdown()" onclick="showShipFromDropdown()"></textarea>
+                                    <div id="ship_from_dropdown" class="dropdown-list"></div>
+                                </div>
                             </div>
                         </div>
 
@@ -1520,15 +1779,11 @@
                             </div>
                         </div>
 
-                        <!-- Transport Mode -->
-                        <div class="field-group">
+                        <!-- Transport Mode: Interactive Dropdown UI (No default "By Road") -->
+                        <div class="field-group dropdown-wrapper">
                             <label class="field-label" for="transport_mode_input">Transport Mode / Transporter Name</label>
-                            <input type="text" name="transport_mode_input" id="transport_mode_input" class="field-input" list="transport_modes_list" placeholder="e.g. By Gaya Aurangabad Transport, By Road..." value="By Road" oninput="updatePreview()">
-                            <datalist id="transport_modes_list">
-                                {% for m in transport_modes %}
-                                    <option value="{{ m }}"></option>
-                                {% endfor %}
-                            </datalist>
+                            <input type="text" name="transport_mode" id="transport_mode_input" class="field-input" placeholder="Type or select transport mode..." value="" autocomplete="off" oninput="handleTransportInput()" onfocus="showTransportDropdown()" onclick="showTransportDropdown()">
+                            <div id="transport_dropdown" class="dropdown-list"></div>
                         </div>
                     </div>
                 </section>
@@ -1684,6 +1939,9 @@
                         <div><strong>Invoice:</strong> <span id="slip_inv_num" class="mono">-</span></div>
                         <div><strong>Date:</strong> <span id="slip_inv_date">-</span></div>
                     </div>
+                    <div class="slip-meta-row" style="margin-top: 4px; font-size: 0.8rem; color: var(--slate-600);">
+                        <div><strong>Transport:</strong> <span id="slip_transport_mode">-</span></div>
+                    </div>
 
                     <div class="slip-party-block">
                         <div class="slip-party-label">Billed To (Buyer)</div>
@@ -1770,10 +2028,16 @@
             <span class="mobile-total-label">Grand Total</span>
             <span class="mobile-total-value" id="dock_total_display">₹0.00</span>
         </div>
-        <button type="button" class="btn-mobile-generate" onclick="submitInvoiceForm()">
-            <span>📄</span>
-            <span>Generate Bill</span>
-        </button>
+        <div class="mobile-dock-actions">
+            <button type="button" class="btn-dock-view-toggle" id="dock_view_toggle" onclick="toggleMobileDockView()">
+                <span id="dock_toggle_icon">👁️</span>
+                <span id="dock_toggle_text">Slip Preview</span>
+            </button>
+            <button type="button" class="btn-mobile-generate" onclick="submitInvoiceForm()">
+                <span>📄</span>
+                <span>Generate Bill</span>
+            </button>
+        </div>
     </div>
 
     <!-- SMART SLIP ASSISTANT MODAL (With Microphone Speech Input) -->
@@ -2009,6 +2273,7 @@
     <script>
         const buyerProfiles = {{ buyer_profiles|tojson|safe }};
         const transportModes = {{ transport_modes|tojson|safe }};
+        const dispatchAddresses = {{ dispatch_addresses|tojson|safe if dispatch_addresses else '[]'|safe }};
         let recentInvoices = {{ recent_invoices|tojson|safe if recent_invoices else '[]'|safe }};
         const preloadInvoice = {{ preload_invoice|tojson|safe if preload_invoice else 'null'|safe }};
         const openRecordsOnLoad = {{ 'true' if open_records else 'false' }};
@@ -2032,23 +2297,34 @@
             }).map(l => String(l || '').trim().replace(/^(buyer|ship\s*to)\s*:\s*/i, '')).filter(l => l.length > 0);
         }
 
-        // Mobile View Switcher
+        // ================= MOBILE VIEW SWITCHER =================
+        let currentMobileView = 'form';
+        function toggleMobileDockView() {
+            if (currentMobileView === 'form') {
+                switchMobileView('slip');
+            } else {
+                switchMobileView('form');
+            }
+        }
+
         function switchMobileView(view) {
+            currentMobileView = view;
             const formCol = document.getElementById('mobile_form_col');
             const previewCol = document.getElementById('mobile_preview_col');
-            const btnForm = document.getElementById('tab_btn_form');
-            const btnSlip = document.getElementById('tab_btn_slip');
+            const dockToggleIcon = document.getElementById('dock_toggle_icon');
+            const dockToggleText = document.getElementById('dock_toggle_text');
 
             if (view === 'slip') {
-                formCol.classList.add('mobile-hidden');
-                previewCol.classList.add('mobile-active');
-                btnSlip.classList.add('active');
-                btnForm.classList.remove('active');
+                if (formCol) formCol.classList.add('mobile-hidden');
+                if (previewCol) previewCol.classList.add('mobile-active');
+                if (dockToggleIcon) dockToggleIcon.textContent = '📝';
+                if (dockToggleText) dockToggleText.textContent = 'Edit Form';
+                window.scrollTo({ top: 0, behavior: 'smooth' });
             } else {
-                formCol.classList.remove('mobile-hidden');
-                previewCol.classList.remove('mobile-active');
-                btnForm.classList.add('active');
-                btnSlip.classList.remove('active');
+                if (formCol) formCol.classList.remove('mobile-hidden');
+                if (previewCol) previewCol.classList.remove('mobile-active');
+                if (dockToggleIcon) dockToggleIcon.textContent = '👁️';
+                if (dockToggleText) dockToggleText.textContent = 'Slip Preview';
             }
         }
 
@@ -2068,27 +2344,103 @@
             updatePreview();
         }
 
-        // ================= DISPATCH FROM (WAREHOUSE) =================
+        // ================= TRANSPORT MODE DROPDOWN =================
+        function showTransportDropdown(filter = '') {
+            const list = document.getElementById('transport_dropdown');
+            if (!list) return;
+            const f = (filter !== '' ? filter : (document.getElementById('transport_mode_input')?.value || '')).toLowerCase().trim();
+            const matches = f ? transportModes.filter(m => m.toLowerCase().includes(f)) : transportModes;
+            
+            if (matches.length === 0) {
+                list.innerHTML = `<div class="dropdown-item dropdown-item-empty">Type custom mode — "${escapeHtml(filter || 'Custom')}" will be used</div>`;
+            } else {
+                list.innerHTML = matches.map(m => `
+                    <div class="dropdown-item" onclick="selectTransportMode('${escapeHtml(m).replace(/'/g, "\\'")}')">
+                        <span>🚛 ${escapeHtml(m)}</span>
+                    </div>
+                `).join('');
+            }
+            list.classList.add('show');
+        }
+
+        function hideTransportDropdown() {
+            const list = document.getElementById('transport_dropdown');
+            if (list) list.classList.remove('show');
+        }
+
+        function handleTransportInput() {
+            const val = document.getElementById('transport_mode_input')?.value || '';
+            showTransportDropdown(val);
+            updatePreview();
+        }
+
+        function selectTransportMode(val) {
+            const inp = document.getElementById('transport_mode_input');
+            if (inp) inp.value = val;
+            hideTransportDropdown();
+            updatePreview();
+        }
+
+        // ================= DISPATCH FROM (WAREHOUSE) DROPDOWN =================
         function toggleShipFromSection(isChecked) {
             const container = document.getElementById('ship_from_container');
-            container.style.display = isChecked ? 'block' : 'none';
+            if (container) container.style.display = isChecked ? 'block' : 'none';
             if (!isChecked) {
-                document.getElementById('ship_from').value = '';
-                document.getElementById('ship_from_preset').value = '';
+                clearShipFrom();
+            } else {
+                showShipFromDropdown('');
             }
             updatePreview();
         }
 
-        function selectPastDispatch(addr) {
-            if (addr) {
-                document.getElementById('ship_from').value = addr;
+        function showShipFromDropdown(filter = '') {
+            const list = document.getElementById('ship_from_dropdown');
+            if (!list) return;
+            const f = (filter !== '' ? filter : (document.getElementById('ship_from')?.value || '')).toLowerCase().trim();
+            const matches = f ? dispatchAddresses.filter(a => a.toLowerCase().includes(f)) : dispatchAddresses;
+            
+            if (matches.length === 0) {
+                list.innerHTML = `<div class="dropdown-item dropdown-item-empty">Type custom warehouse address above</div>`;
+            } else {
+                list.innerHTML = matches.map(addr => {
+                    const lines = addr.split('\n');
+                    const title = lines[0] || addr;
+                    const subtitle = lines.slice(1).join(', ') || '';
+                    const escapedFull = encodeURIComponent(addr);
+                    return `
+                        <div class="dropdown-item" onclick="selectDispatchAddress('${escapedFull}')">
+                            <div style="font-weight: 600; color: var(--slate-900);">🏢 ${escapeHtml(title)}</div>
+                            ${subtitle ? `<div style="font-size: 0.78rem; color: var(--slate-500); margin-top: 2px;">${escapeHtml(subtitle)}</div>` : ''}
+                        </div>
+                    `;
+                }).join('');
             }
+            list.classList.add('show');
+        }
+
+        function hideShipFromDropdown() {
+            const list = document.getElementById('ship_from_dropdown');
+            if (list) list.classList.remove('show');
+        }
+
+        function handleShipFromInput() {
+            const val = document.getElementById('ship_from')?.value || '';
+            showShipFromDropdown(val);
+            updatePreview();
+        }
+
+        function selectDispatchAddress(encodedAddr) {
+            const addr = decodeURIComponent(encodedAddr);
+            const textarea = document.getElementById('ship_from');
+            if (textarea) textarea.value = addr;
+            hideShipFromDropdown();
             updatePreview();
         }
 
         function clearShipFrom() {
-            document.getElementById('ship_from').value = '';
-            document.getElementById('ship_from_preset').value = '';
+            const textarea = document.getElementById('ship_from');
+            if (textarea) textarea.value = '';
+            hideShipFromDropdown();
             updatePreview();
         }
 
@@ -2258,6 +2610,8 @@
                 const billDate = document.getElementById('invoice_date').value;
                 const ewayDate = document.getElementById('ewaybill_date');
                 if (!ewayDate.value) ewayDate.value = billDate;
+            } else {
+                document.getElementById('ewaybill_date').value = '';
             }
             updatePreview();
         }
@@ -2375,6 +2729,12 @@
             document.getElementById('dock_total_display').textContent = totalStr;
 
             document.getElementById('slip_words').textContent = numberToWordsInr(roundedTotal);
+
+            const slipTransport = document.getElementById('slip_transport_mode');
+            if (slipTransport) {
+                const tVal = (document.getElementById('transport_mode_input')?.value || '').trim();
+                slipTransport.textContent = tVal || '-';
+            }
         }
 
         function numberToWordsInr(num) {
@@ -2845,6 +3205,27 @@
         function normalizeName(val) {
             return String(val || '').toLowerCase().replace(/[^a-z0-9]/g, '');
         }
+
+        // Close dropdowns on outside click
+        document.addEventListener('click', (e) => {
+            const bSearch = document.getElementById('buyer_profile_search');
+            const bDrop = document.getElementById('buyer_dropdown');
+            if (bDrop && bSearch && !bSearch.contains(e.target) && !bDrop.contains(e.target)) {
+                bDrop.style.display = 'none';
+            }
+
+            const tInput = document.getElementById('transport_mode_input');
+            const tDrop = document.getElementById('transport_dropdown');
+            if (tDrop && tInput && !tInput.contains(e.target) && !tDrop.contains(e.target)) {
+                hideTransportDropdown();
+            }
+
+            const sfInput = document.getElementById('ship_from');
+            const sfDrop = document.getElementById('ship_from_dropdown');
+            if (sfDrop && sfInput && !sfInput.contains(e.target) && !sfDrop.contains(e.target)) {
+                hideShipFromDropdown();
+            }
+        });
 
         window.addEventListener('paste', async (e) => {
             const items = (e.clipboardData || e.originalEvent?.clipboardData)?.items || [];

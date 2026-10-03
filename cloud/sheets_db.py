@@ -398,7 +398,14 @@ class GoogleSheetsDB:
                     'CGST_SGST' if str(record.get('tax_type', '')).upper() == 'CGST_SGST' else 'IGST'
                 )
 
-            records.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+            def _sort_inv(x):
+                inv_num = str(x.get('invoice_number', '')).strip()
+                m = re.search(r'(\d+)', inv_num)
+                num = int(m.group(1)) if m else 0
+                dt = str(x.get('invoice_date', '') or x.get('created_at', ''))
+                return (dt, num)
+
+            records.sort(key=_sort_inv, reverse=True)
             self._cache['invoices'] = records
             self._cache_time['invoices'] = now
             if limit is None or limit <= 0:
@@ -460,11 +467,21 @@ class GoogleSheetsDB:
         return next((i for i in invoices if (i.get('invoice_number') or '').strip() == target), None)
     
     def get_last_invoice_number(self) -> Optional[str]:
-        """Get the most recent invoice number for auto-suggestion."""
-        invoices = self.get_all_invoices(limit=10)
-        if invoices:
-            return invoices[0].get('invoice_number')
-        return None
+        """Get the highest sequential invoice number for current FY."""
+        invoices = self.get_all_invoices(limit=2000)
+        max_num = 0
+        best_inv = None
+        for inv in invoices:
+            inv_str = str(inv.get('invoice_number', '')).strip()
+            if '2026-27' in inv_str or '26-27' in inv_str:
+                m = re.search(r'(\d+)', inv_str)
+                if m:
+                    val = int(m.group(1))
+                    # Skip outlier test bill 99
+                    if val != 99 and val > max_num:
+                        max_num = val
+                        best_inv = inv_str
+        return best_inv if best_inv else (invoices[0].get('invoice_number') if invoices else None)
 
 
 # ===================== HELPER FUNCTIONS =====================
