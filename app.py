@@ -61,6 +61,7 @@ from config import (
     BUYER_PROFILES_JSON, TRANSPORT_MODES_JSON, OUTPUT_DIR, 
     PDF_OUTPUT_DIR, TEMPLATE_EXCEL_FILE, ensure_dirs, BASE_DIR
 )
+from settings_manager import get_settings, update_settings, DEFAULT_SETTINGS
 
 # Attempt to import win32com.client for PDF conversion
 try:
@@ -80,6 +81,7 @@ except ImportError:
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY') or os.urandom(24).hex()
+app.config['SESSION_COOKIE_NAME'] = '__session'
 ensure_dirs()
 
 BACKUP_DIR = os.path.join(BASE_DIR, "_backups")
@@ -454,7 +456,8 @@ def index():
                           today_date=today_date, 
                           suggested_invoice_number=suggestion,
                           recent_invoices=recent_invoices,
-                          preload_invoice=preload_invoice)
+                          preload_invoice=preload_invoice,
+                          app_settings=get_settings())
 
 
 @app.route('/generate_invoice', methods=['POST'])
@@ -720,13 +723,24 @@ def api_next_invoice_number():
     return jsonify({"next_invoice_number": suggest_next_invoice_number()})
 
 
-@app.route('/api/profiles')
-def api_list_profiles():
-    """Get all buyer profiles as JSON."""
-    profiles = load_data(BUYER_PROFILES_JSON)
-    valid = [p for p in profiles if p.get('profile_id') and p.get('buyer_name')]
-    valid.sort(key=lambda p: p.get('buyer_name', '').lower())
-    return jsonify(valid)
+@app.route('/api/settings', methods=['GET', 'POST'])
+def api_settings():
+    """Retrieve or update dynamic application settings."""
+    if request.method == 'POST':
+        updates = request.get_json(silent=True) or {}
+        new_settings = update_settings(updates)
+        return jsonify({'success': True, 'settings': new_settings})
+    return jsonify({'success': True, 'settings': get_settings()})
+
+
+@app.route('/api/ai/parse-bill', methods=['POST'])
+def api_ai_parse_bill_local():
+    """Delegate AI parse bill to cloud module implementation if available."""
+    try:
+        from cloud.app_cloud import api_ai_parse_bill
+        return api_ai_parse_bill()
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'AI parse error: {e}'}), 500
 
 
 # ===================== PROFILE MANAGEMENT =====================

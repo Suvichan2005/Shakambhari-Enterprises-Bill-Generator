@@ -31,6 +31,7 @@ from pathlib import Path
 # Cloud integrations
 from sheets_db import GoogleSheetsDB, init_sheets_db
 from cloud_storage import CloudStorage, init_cloud_storage
+from settings_manager import get_settings, update_settings, DEFAULT_SETTINGS
 
 # Excel handling
 import openpyxl
@@ -53,6 +54,8 @@ if not _secret_key:
     print("WARNING: FLASK_SECRET_KEY is not set. Using ephemeral key; sessions reset on restart.")
 
 app.secret_key = _secret_key
+# Firebase Hosting CDN only passes through cookies named '__session'.
+app.config['SESSION_COOKIE_NAME'] = '__session'
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
@@ -203,11 +206,15 @@ def get_sheets_db_or_none() -> Optional[GoogleSheetsDB]:
         return None
 
 
-def get_cloud_storage() -> CloudStorage:
-    """Get or initialize the Cloud Storage connection."""
+def get_cloud_storage() -> Optional[CloudStorage]:
+    """Get or initialize the Cloud Storage connection, returning None if unavailable."""
     global _cloud_storage
     if _cloud_storage is None:
-        _cloud_storage = init_cloud_storage()
+        try:
+            _cloud_storage = init_cloud_storage()
+        except Exception as exc:
+            app.logger.warning("Cloud Storage unavailable: %s", exc)
+            return None
     return _cloud_storage
 
 
@@ -991,10 +998,12 @@ def generate_invoice_excel(invoice_data: Dict) -> bytes:
     sheet['A2'] = f"INVOICE No. {invoice_data.get('invoice_number', '')}"
     sheet['F2'] = f"Date : {invoice_data.get('invoice_date_display', '')}"
     
-    ewaybill_num = str(invoice_data.get('ewaybill_number', '') or '').strip()
+    ewaybill_num = str(invoice_data.get('ewaybill_number') or invoice_data.get('ewaybill_num') or '').strip()
     sheet['A3'] = f"Ewaybill No. {ewaybill_num}" if ewaybill_num else "Ewaybill No. "
         
-    ewaybill_date = str(invoice_data.get('ewaybill_date_display', '') or '').strip()
+    ewaybill_date = str(invoice_data.get('ewaybill_date_display') or invoice_data.get('ewaybill_date') or '').strip()
+    if ewaybill_date and re.match(r'^\d{4}-\d{2}-\d{2}$', ewaybill_date):
+        ewaybill_date = format_date_for_invoice(ewaybill_date)
     # If ewaybill no. is blank, ewaybill date must also be blank
     if ewaybill_num and ewaybill_date:
         sheet['F3'] = f"Ewaybill Date : {ewaybill_date}"
@@ -1144,7 +1153,8 @@ def generate_invoice_excel(invoice_data: Dict) -> bytes:
     sheet['A40'] = amount_words
     
     # Authorised Signatory explicitly maintained under signature image
-    sheet['G48'] = 'Authorised Signatory'
+    app_cfg = get_settings(get_cloud_storage())
+    sheet['G48'] = app_cfg.get('signatory_title', 'Authorised Signatory')
 
     # Add layout marker
     sheet['Z1'] = 'v2'
@@ -1239,6 +1249,12 @@ def index():
     bucket_base = f"https://console.cloud.google.com/storage/browser/{bucket}"
     project_suffix = f"?project={project}" if project else ''
 
+    storage = None
+    try:
+        storage = get_cloud_storage()
+    except Exception as exc:
+        app.logger.warning("Could not initialize Cloud Storage in index: %s", exc)
+
     if db is None:
         flash("Sheets configuration is missing, so saved profiles and invoice history are unavailable.", "warning")
         return render_template(
@@ -1251,6 +1267,7 @@ def index():
             recent_invoices=[],
             preload_invoice=None,
             open_records=(request.args.get('open_records') == '1'),
+            app_settings=get_settings(storage),
             bucket_console_url=f"{bucket_base}{project_suffix}" if bucket else '',
             invoices_folder_url=f"{bucket_base}/invoices/{project_suffix}" if bucket else '',
             pdfs_folder_url=f"{bucket_base}/pdfs/{project_suffix}" if bucket else '',
@@ -1280,11 +1297,12 @@ def index():
     combined_transport_modes = [m for m in (transport_modes + invoice_transport_modes) if m]
     transport_cores = list(set(extract_transport_core(m) for m in combined_transport_modes if extract_transport_core(m)))
     transport_cores.sort()
-    try:
-        storage_rows = get_cloud_storage().list_invoices(limit=2000)
-        recent_invoices = _merge_with_storage_rows(recent_invoices, storage_rows)
-    except Exception as exc:
-        app.logger.warning('Could not list storage invoices for modal merge: %s', exc)
+    if storage:
+        try:
+            storage_rows = storage.list_invoices(limit=2000)
+            recent_invoices = _merge_with_storage_rows(recent_invoices, storage_rows)
+        except Exception as exc:
+            app.logger.warning('Could not list storage invoices for modal merge: %s', exc)
 
     load_invoice_number = request.args.get('load', '').strip()
     preload_invoice = None
@@ -1294,9 +1312,8 @@ def index():
                 preload_invoice = db.get_invoice(load_invoice_number)
             except Exception as exc:
                 app.logger.warning("Could not fetch preload invoice %s from Sheets: %s", load_invoice_number, exc)
-        if not preload_invoice:
+        if not preload_invoice and storage:
             pattern = _safe_filename(load_invoice_number.replace('/', '-'), '')
-            storage = get_cloud_storage()
             try:
                 blobs = list(storage.client.list_blobs(storage.bucket_name, prefix=f"{storage.INVOICES_FOLDER}Invoice_{pattern}"))
                 if blobs:
@@ -1331,6 +1348,7 @@ def index():
                           recent_invoices=recent_invoices,
                           preload_invoice=preload_invoice,
                           open_records=(request.args.get('open_records') == '1'),
+                          app_settings=get_settings(storage),
                           bucket_console_url=f"{bucket_base}{project_suffix}" if bucket else '',
                           invoices_folder_url=f"{bucket_base}/invoices/{project_suffix}" if bucket else '',
                           pdfs_folder_url=f"{bucket_base}/pdfs/{project_suffix}" if bucket else '')
@@ -1944,6 +1962,17 @@ def api_get_invoice_by_file(filename):
     return jsonify(invoice)
 
 
+@app.route('/api/settings', methods=['GET', 'POST'])
+def api_settings():
+    """Retrieve or update dynamic application settings."""
+    storage = get_cloud_storage()
+    if request.method == 'POST':
+        updates = request.get_json(silent=True) or {}
+        new_settings = update_settings(updates, storage)
+        return jsonify({'success': True, 'settings': new_settings})
+    return jsonify({'success': True, 'settings': get_settings(storage)})
+
+
 @app.route('/api/ai/parse-bill', methods=['POST'])
 def api_ai_parse_bill():
     """
@@ -1951,6 +1980,9 @@ def api_ai_parse_bill():
     and/or user notes using Google Gemini Flash.
     Designed for elderly-friendly usage with free-tier rate limit efficiency.
     """
+    storage = get_cloud_storage()
+    current_settings = get_settings(storage)
+
     data = request.get_json(silent=True) or {}
     images = data.get('images', [])  # List of {data: base64_str, mime_type: 'image/jpeg'}
     prompt_text = data.get('prompt', '').strip()
@@ -1959,31 +1991,65 @@ def api_ai_parse_bill():
     api_key = (
         request.headers.get('X-Gemini-Key') or 
         data.get('api_key') or 
-        os.environ.get('GEMINI_API_KEY', '')
+        os.environ.get('GEMINI_API_KEY', '') or
+        current_settings.get('gemini_backend_api_key', '') or
+        DEFAULT_SETTINGS.get('gemini_backend_api_key', '')
     ).strip()
 
     if not api_key:
         return jsonify({
             'success': False,
-            'error': 'Gemini API key is required. Please enter your free key (get one free at https://aistudio.google.com/apikey).'
+            'error': 'Gemini API key is required. Please configure it in Settings or get a free key at https://aistudio.google.com/apikey.'
         }), 400
 
     if not images and not prompt_text:
         return jsonify({'success': False, 'error': 'Please provide at least one image or typed note.'}), 400
 
-    # Retrieve existing buyers and transport modes for accurate entity matching
+    # Retrieve existing buyers, transports, dispatch addresses, and invoice history for grounding
     known_buyers = []
     known_transports = []
+    known_dispatch_addresses = []
+    existing_invoices_sample = []
+    suggested_inv = suggest_next_invoice_number()
+
     try:
         db = get_sheets_db_or_none()
         if db:
+            all_b = db.get_all_buyers()
             known_buyers = [
-                {'profile_id': b.get('profile_id'), 'buyer_name': b.get('buyer_name'), 'gstin': b.get('gstin')}
-                for b in db.get_all_buyers() if b.get('buyer_name')
+                {
+                    'profile_id': b.get('profile_id'),
+                    'buyer_name': b.get('buyer_name'),
+                    'gstin': b.get('gstin', ''),
+                    'state': b.get('state', ''),
+                    'state_code': b.get('state_code', ''),
+                    'details': b.get('buyer_details', [])
+                }
+                for b in all_b if b.get('buyer_name')
             ]
             known_transports = db.get_all_transport_modes()
+            known_dispatch_addresses = db.get_all_dispatch_addresses()
+            past_invs = db.get_all_invoices(limit=200)
+            existing_invoices_sample = [inv.get('invoice_number', '').strip() for inv in past_invs if inv.get('invoice_number')]
     except Exception as e:
         app.logger.warning("Could not fetch DB records for AI context: %s", e)
+
+    if not known_dispatch_addresses:
+        known_dispatch_addresses = list(getattr(GoogleSheetsDB, 'DEFAULT_DISPATCH_ADDRESSES', []))
+
+    # Also check Cloud Storage for invoice numbers
+    if storage:
+        try:
+            st_invs = storage.list_invoices(limit=200)
+            for si in st_invs:
+                num = si.get('invoice_number', '').strip()
+                if num and num not in existing_invoices_sample:
+                    existing_invoices_sample.append(num)
+        except Exception:
+            pass
+
+    history = data.get('history', [])  # Multi-turn conversation history
+    current_draft = data.get('current_draft') or {}
 
     parts = []
 
@@ -2001,47 +2067,92 @@ def api_ai_parse_bill():
                 }
             })
 
-    buyers_summary = [f"{b['buyer_name']} (ID: {b['profile_id']}, GSTIN: {b.get('gstin', '')})" for b in known_buyers[:50]]
+    company_name = current_settings.get('company_name', 'Shakambhari Enterprises')
+    buyers_summary = [
+        f"{b['buyer_name']} | GSTIN: {b.get('gstin', 'N/A')} | State: {b.get('state', '')} ({b.get('state_code', '')}) | ID: {b['profile_id']}"
+        for b in known_buyers
+    ]
+
     instruction = (
-        "You are an expert billing assistant for Shakambhari Enterprises, an aluminium utensils manufacturing & trading business in Liluah/Howrah, West Bengal.\n"
-        "Your task is to extract billing details from the provided picture(s) (rough note, paper slip, weight chit, challan, visiting card) and user text notes.\n\n"
-        f"KNOWN BUYERS IN DATABASE:\n{json.dumps(buyers_summary, ensure_ascii=False)}\n\n"
-        f"KNOWN TRANSPORTS:\n{json.dumps(known_transports, ensure_ascii=False)}\n\n"
-        "INSTRUCTIONS:\n"
-        "1. Check if the buyer matches any known buyer in the database. If it matches, set 'matched_profile_id' to that ID, 'buyer_name' to that buyer name, and 'is_new_buyer': false.\n"
-        "2. If it is a new party or visiting card not in the database, set 'is_new_buyer': true, extract full 'buyer_name', format 'buyer_details' (array of address lines: Name, Address lines, City/Pincode, State & Code, GSTIN), and extract 'gstin', 'state', 'state_code'.\n"
-        "3. Match transport to known transports if similar (e.g. 'Gaya transport' -> 'By Gaya Aurangabad Transport', 'Kolkata Assam' -> 'By Kolkata Assam Transways').\n"
-        "4. Extract item line items: description (default 'Aluminium Utensils' if utensils/bartan mentioned), bags (number of bags), quantity (numeric kg/wt), rate (numeric rate per kg), hsn ('76151030' for aluminium utensils).\n"
-        "5. Tax type: 'IGST' if buyer is outside West Bengal (State code != 19, e.g. Bihar 10, Assam 18, Jharkhand 20) or unknown; 'CGST_SGST' if inside West Bengal (State code 19).\n"
-        "6. If user provided a follow-up or correction prompt, prioritize those corrections.\n\n"
-        "OUTPUT STRICT JSON ONLY (NO CODE FENCES):\n"
+        f"You are the personal billing assistant for {company_name}, an aluminium utensils manufacturing and trading business in Liluah/Howrah, West Bengal.\n"
+        "Your task is to accurately read rough slips, paper chits, visiting cards, weight notes, or verbal instructions and extract complete invoice data.\n\n"
+        "=== DATABASE GROUNDING (YOUR KNOWLEDGE BASE) ===\n"
+        f"1. KNOWN BUYERS IN DATABASE ({len(known_buyers)} profiles):\n"
+        f"{json.dumps(buyers_summary, ensure_ascii=False, indent=1)}\n\n"
+        f"2. KNOWN TRANSPORTS:\n"
+        f"{json.dumps(known_transports, ensure_ascii=False)}\n\n"
+        f"3. KNOWN DISPATCH FROM ADDRESSES:\n"
+        f"{json.dumps(known_dispatch_addresses, ensure_ascii=False)}\n\n"
+        f"4. RECENT INVOICE NUMBERS ALREADY USED IN DATABASE:\n"
+        f"{json.dumps(existing_invoices_sample[:80], ensure_ascii=False)}\n\n"
+        f"5. SUGGESTED NEXT SEQUENTIAL INVOICE NUMBER: {suggested_inv}\n\n"
+        "=== CRITICAL INSTRUCTIONS ===\n"
+        "1. DUPLICATE INVOICE CHECK:\n"
+        "   - If an invoice number is found or specified (e.g. '057', '57', '57/2026-27'), check if it already exists in RECENT INVOICE NUMBERS.\n"
+        "   - If it DOES exist in past invoices:\n"
+        "     * Set 'is_duplicate_invoice': true\n"
+        f"     * Add a clarification question: 'Invoice #{'{num}'} is already in past records. Do you want to proceed with this duplicate number, or use next suggested number {suggested_inv}?'\n"
+        "   - If not in past invoices:\n"
+        "     * Set 'is_duplicate_invoice': false\n"
+        "   - If no invoice number is specified on the slip, leave 'invoice_number' as '' or use the suggested next number.\n\n"
+        "2. TOLERANT BUYER MATCHING (SEMANTIC & FUZZY):\n"
+        "   - Search KNOWN BUYERS carefully. Do NOT miss a match because of slight spelling differences, abbreviations, punctuation, or OCR noise (e.g. 'Das metal' matches 'Das Metal', 'Anand Metal' matches 'ANAND METAL WORKS', 'Manik' matches 'M/S MANIK STORE').\n"
+        "   - If matched, set 'matched_profile_id' to that ID, 'buyer_name' to the official name, and 'is_new_buyer': false.\n"
+        "   - If it is genuinely a new party or visiting card, set 'is_new_buyer': true, 'matched_profile_id': null, formulate clean 'buyer_details' address lines, and extract 'gstin', 'state', 'state_code'.\n\n"
+        "3. LOGISTICS MATCHING:\n"
+        "   - Match transport to KNOWN TRANSPORTS (e.g. 'Gaya transport' -> 'By Gaya Aurangabad Transport', 'SPS' -> 'SPS PARRCELL PRIVATE LIMITED').\n"
+        "   - Dispatch from: default to Liluah Warehouse address unless an alternate dispatch address is indicated.\n\n"
+        "4. GOODS & TAXATION:\n"
+        "   - Default description: 'Aluminium Utensils' (with bag count if noted, e.g. 'Aluminium Utensils (2 Bags)').\n"
+        "   - Default HSN: '76151030'.\n"
+        "   - Tax type: 'IGST' if buyer is outside West Bengal (State Code != 19) or unknown; 'CGST_SGST' if buyer is within West Bengal (State Code 19).\n"
+        "   - If any handwriting or rate/weight is blurry or ambiguous, list a specific question in 'clarifications'.\n\n"
+        "5. MULTI-TURN REVISION & DRAFT UPDATES:\n"
+        "   - If the user provides a follow-up answer (e.g. 'use 058', 'change rate to 410', 'add delivery 300'), apply those corrections directly into 'data'.\n\n"
+        "OUTPUT STRICT JSON ONLY (NO CODE BLOCKS OR MARKDOWN):\n"
         "{\n"
-        '  "buyer_name": "...",\n'
-        '  "matched_profile_id": "..." or null,\n'
-        '  "is_new_buyer": false,\n'
-        '  "buyer_details": ["Line 1", "Line 2", ...],\n'
-        '  "gstin": "...",\n'
-        '  "state": "...",\n'
-        '  "state_code": "...",\n'
-        '  "transport_mode": "...",\n'
-        '  "delivery_charge": 0.0,\n'
-        '  "tax_type": "IGST" or "CGST_SGST",\n'
-        '  "ewaybill_number": "",\n'
-        '  "items": [\n'
-        '    {\n'
-        '      "description": "Aluminium Utensils",\n'
-        '      "bags": "2",\n'
-        '      "quantity": 89.080,\n'
-        '      "rate": 400.00,\n'
-        '      "hsn": "76151030"\n'
-        '    }\n'
-        '  ],\n'
-        '  "notes": "Short summary of extracted data"\n'
+        '  "conversational_message": "Friendly explanation of what was found, matched, or updated...",\n'
+        '  "has_clarifications": true,\n'
+        '  "clarifications": ["Clarification question 1...", "Clarification question 2..."],\n'
+        '  "is_duplicate_invoice": false,\n'
+        '  "suggested_next_invoice_number": "' + suggested_inv + '",\n'
+        '  "data": {\n'
+        '    "invoice_number": "...",\n'
+        '    "invoice_date": "YYYY-MM-DD",\n'
+        '    "ewaybill_number": "",\n'
+        '    "ewaybill_date": "",\n'
+        '    "buyer_name": "...",\n'
+        '    "matched_profile_id": "..." or null,\n'
+        '    "is_new_buyer": false,\n'
+        '    "buyer_details": ["Line 1", "Line 2", ...],\n'
+        '    "gstin": "...",\n'
+        '    "state": "...",\n'
+        '    "state_code": "...",\n'
+        '    "transport_mode": "...",\n'
+        '    "dispatch_from": "...",\n'
+        '    "delivery_charge": 0.0,\n'
+        '    "tax_type": "IGST" or "CGST_SGST",\n'
+        '    "items": [\n'
+        '      {\n'
+        '        "description": "Aluminium Utensils",\n'
+        '        "bags": "2",\n'
+        '        "quantity": 89.080,\n'
+        '        "rate": 400.00,\n'
+        '        "hsn": "76151030"\n'
+        '      }\n'
+        '    ]\n'
+        '  }\n'
         "}"
     )
 
-    user_text = prompt_text if prompt_text else "Extract the invoice details from these rough slips/pictures."
-    parts.append({'text': f"{instruction}\n\nUSER PROMPT / ADDITIONAL NOTES:\n{user_text}"})
+    context_prompt = instruction
+    if current_draft:
+        context_prompt += f"\n\nCURRENT WORKING DRAFT DATA:\n{json.dumps(current_draft, ensure_ascii=False)}"
+    if history:
+        context_prompt += f"\n\nPREVIOUS CONVERSATION HISTORY:\n{json.dumps(history, ensure_ascii=False)}"
+
+    user_text = prompt_text if prompt_text else "Please examine the provided slip picture(s) and extract all billing details."
+    parts.append({'text': f"{context_prompt}\n\nUSER PROMPT / FOLLOW-UP:\n{user_text}"})
 
     gemini_payload = {
         "contents": [{"parts": parts}],
@@ -2051,8 +2162,15 @@ def api_ai_parse_bill():
         }
     }
 
-    # Try gemini-2.0-flash first, fallback to gemini-1.5-flash
-    models = ["gemini-2.0-flash", "gemini-1.5-flash"]
+    # Model hierarchy with automatic fallback on rate limit (429), high demand (503), or errors
+    primary_m = current_settings.get('gemini_primary_model', 'gemini-3.8-flash')
+    backup_ms = current_settings.get('gemini_backup_models', [
+        "gemini-3.7-flash",
+        "gemini-3.5-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-flash-latest"
+    ])
+    models = [primary_m] + [m for m in backup_ms if m != primary_m]
     last_error = ""
 
     for model in models:
@@ -2064,36 +2182,47 @@ def api_ai_parse_bill():
                 headers={'Content-Type': 'application/json'},
                 method='POST'
             )
-            with urllib.request.urlopen(req, timeout=45) as resp:
+            with urllib.request.urlopen(req, timeout=20) as resp:
                 res_body = resp.read().decode('utf-8')
                 res_data = json.loads(res_body)
                 candidates = res_data.get('candidates', [])
                 if not candidates:
-                    last_error = "Gemini returned no candidates."
+                    last_error = f"Model {model} returned no candidates."
                     continue
                 content = candidates[0].get('content', {})
                 resp_parts = content.get('parts', [])
                 if not resp_parts:
-                    last_error = "Gemini returned empty parts."
+                    last_error = f"Model {model} returned empty parts."
                     continue
                 text_out = resp_parts[0].get('text', '').strip()
                 # Clean code fences if present
                 clean_json_str = re.sub(r'^```(?:json)?\s*', '', text_out, flags=re.MULTILINE)
                 clean_json_str = re.sub(r'\s*```$', '', clean_json_str, flags=re.MULTILINE).strip()
-                extracted = json.loads(clean_json_str)
+                try:
+                    parsed_response = json.loads(clean_json_str)
+                except Exception:
+                    # Fallback regex extraction of outermost JSON object
+                    m_json = re.search(r'(\{[\s\S]*\})', clean_json_str)
+                    if m_json:
+                        repaired = re.sub(r',\s*([}\]])', r'\1', m_json.group(1))
+                        parsed_response = json.loads(repaired)
+                    else:
+                        raise
+
+                extracted_data = parsed_response.get('data') or parsed_response
 
                 # If new buyer and auto-save enabled, persist to Google Sheets
-                if extracted.get('is_new_buyer') and extracted.get('buyer_name') and create_buyer_if_new:
+                if extracted_data.get('is_new_buyer') and extracted_data.get('buyer_name') and create_buyer_if_new:
                     new_profile_id = f"buyer_{int(time.time())}_{uuid.uuid4().hex[:4]}"
-                    b_lines = extracted.get('buyer_details') or [extracted.get('buyer_name')]
+                    b_lines = extracted_data.get('buyer_details') or [extracted_data.get('buyer_name')]
                     new_profile = {
                         'profile_id': new_profile_id,
-                        'buyer_name': extracted.get('buyer_name', '').strip(),
+                        'buyer_name': extracted_data.get('buyer_name', '').strip(),
                         'buyer_details': b_lines,
-                        'gstin': extracted.get('gstin', '').strip().upper(),
-                        'state': extracted.get('state', ''),
-                        'state_code': extracted.get('state_code', ''),
-                        'default_tax_type': extracted.get('tax_type', 'IGST')
+                        'gstin': extracted_data.get('gstin', '').strip().upper(),
+                        'state': extracted_data.get('state', ''),
+                        'state_code': extracted_data.get('state_code', ''),
+                        'default_tax_type': extracted_data.get('tax_type', 'IGST')
                     }
                     try:
                         db = get_sheets_db_or_none()
@@ -2101,22 +2230,34 @@ def api_ai_parse_bill():
                             db.save_buyer(new_profile)
                     except Exception as err:
                         app.logger.warning("Could not auto-save new buyer profile: %s", err)
-                    extracted['matched_profile_id'] = new_profile_id
-                    extracted['created_profile'] = new_profile
+                    extracted_data['matched_profile_id'] = new_profile_id
+                    extracted_data['created_profile'] = new_profile
+                    parsed_response['data'] = extracted_data
 
-                return jsonify({'success': True, 'data': extracted, 'model': model})
+                return jsonify({
+                    'success': True,
+                    'model': model,
+                    'conversational_message': parsed_response.get('conversational_message', 'Extracted details from slip.'),
+                    'has_clarifications': parsed_response.get('has_clarifications', False),
+                    'clarifications': parsed_response.get('clarifications', []),
+                    'is_duplicate_invoice': parsed_response.get('is_duplicate_invoice', False),
+                    'duplicate_warning': parsed_response.get('duplicate_warning'),
+                    'suggested_next_invoice_number': parsed_response.get('suggested_next_invoice_number', suggested_inv),
+                    'data': extracted_data
+                })
 
         except urllib.error.HTTPError as he:
             err_msg = he.read().decode('utf-8', errors='ignore')
-            app.logger.warning("Gemini %s HTTP %s: %s", model, he.code, err_msg)
-            last_error = f"HTTP {he.code}: {err_msg}"
-            if he.code == 429:
-                return jsonify({'success': False, 'error': 'Gemini free rate limit reached (15 requests/min). Please pause for 10-15 seconds and try again.'}), 429
+            app.logger.warning("Gemini %s HTTP %s: %s - Failing over to backup model...", model, he.code, err_msg)
+            last_error = f"{model} returned HTTP {he.code}: {err_msg}"
+            # DO NOT abort immediately on 429 or 503; smoothly try the next model in the hierarchy!
+            continue
         except Exception as exc:
-            app.logger.warning("Gemini %s error: %s", model, exc)
-            last_error = str(exc)
+            app.logger.warning("Gemini %s error: %s - Failing over...", model, exc)
+            last_error = f"{model} error: {exc}"
+            continue
 
-    return jsonify({'success': False, 'error': f'Failed to process slip with AI: {last_error}'}), 500
+    return jsonify({'success': False, 'error': f'All AI vision models were busy or rate-limited. Please retry shortly. Last error: {last_error}'}), 500
 
 
 @app.errorhandler(404)

@@ -38,3 +38,9 @@ cloud/*.key
 .DS_Store
 Thumbs.db
 
+# Secrets, Session files & Local settings
+cookies.txt
+.firebase/
+app_settings.json
+cloud/app_settings.json
+

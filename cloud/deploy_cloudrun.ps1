@@ -6,13 +6,18 @@ param(
     [string]$Region = "asia-south1",
     [string]$ServiceAccountEmail,
     [string]$AppPassword,
-    [string]$FlaskSecretKey
+    [string]$FlaskSecretKey,
+    [string]$GeminiApiKey = ""
 )
 
 $ErrorActionPreference = "Stop"
 
 if (-not $AppPassword) {
     throw "AppPassword is required. Pass -AppPassword 'your-strong-password'"
+}
+
+if (-not $GeminiApiKey -and $env:GEMINI_API_KEY) {
+    $GeminiApiKey = $env:GEMINI_API_KEY
 }
 
 if (-not $FlaskSecretKey) {
@@ -62,7 +67,7 @@ try {
         --platform managed `
         --allow-unauthenticated `
         --service-account $ServiceAccountEmail `
-        --set-env-vars "GOOGLE_CLOUD_PROJECT=$ProjectId,SPREADSHEET_ID=$SpreadsheetId,GCS_BUCKET_NAME=$BucketName,FLASK_SECRET_KEY=$FlaskSecretKey,APP_PASSWORD=$AppPassword,FLASK_ENV=production,SESSION_COOKIE_SECURE=true"
+        --set-env-vars "GOOGLE_CLOUD_PROJECT=$ProjectId,SPREADSHEET_ID=$SpreadsheetId,GCS_BUCKET_NAME=$BucketName,FLASK_SECRET_KEY=$FlaskSecretKey,APP_PASSWORD=$AppPassword,FLASK_ENV=production,SESSION_COOKIE_SECURE=true,GEMINI_API_KEY=$GeminiApiKey"
 
     if ($LASTEXITCODE -ne 0) {
         throw "Cloud Run deployment failed."
