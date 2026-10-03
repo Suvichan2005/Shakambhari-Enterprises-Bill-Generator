@@ -14,7 +14,7 @@ import os
 import json
 import re
 from decimal import Decimal, ROUND_HALF_UP
-from flask import Flask, render_template, request, redirect, url_for, send_from_directory, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, send_from_directory, flash, jsonify, make_response
 from datetime import datetime
 import uuid
 from num2words import num2words
@@ -412,6 +412,32 @@ def extract_invoice_data(filepath: str) -> Optional[Dict]:
         import traceback
         traceback.print_exc()
         return None
+
+
+# ===================== PWA & STATIC ASSET ROUTES =====================
+
+@app.route('/manifest.json')
+def manifest_json():
+    """Serve PWA Web App Manifest."""
+    static_dir = os.path.join(os.path.dirname(__file__), 'static')
+    return send_from_directory(static_dir, 'manifest.json', mimetype='application/manifest+json')
+
+
+@app.route('/sw.js')
+def service_worker():
+    """Serve PWA Service Worker with root scope permissions."""
+    static_dir = os.path.join(os.path.dirname(__file__), 'static')
+    resp = make_response(send_from_directory(static_dir, 'sw.js', mimetype='application/javascript'))
+    resp.headers['Service-Worker-Allowed'] = '/'
+    resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    return resp
+
+
+@app.route('/favicon.ico')
+def favicon():
+    """Serve favicon."""
+    static_dir = os.path.join(os.path.dirname(__file__), 'static')
+    return send_from_directory(static_dir, 'favicon.ico', mimetype='image/x-icon')
 
 
 # ===================== ROUTE HANDLERS =====================

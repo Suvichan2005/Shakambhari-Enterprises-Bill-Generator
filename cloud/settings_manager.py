@@ -22,6 +22,8 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "company_gstin": "19ACZPN5725A1Z8",
     "company_state": "West Bengal",
     "company_state_code": "19",
+    "company_phone": "",
+    "company_dispatch_address": "129, Girish Ghosh Road, Belur, Howrah - 711202",
 
     # Invoice Numbering & Formatting
     "invoice_prefix": "",
@@ -34,7 +36,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "default_hsn_code": "76151030",
     "default_delivery_charge": 0.0,
     "default_tax_type": "IGST",
-    "default_transport_mode": "By Road",
+    "default_transport_mode": "",
 
     # AI Multimodal Vision Assistant (Gemini)
     "gemini_primary_model": "gemini-3.8-flash",
@@ -110,6 +112,9 @@ def update_settings(updates: Dict[str, Any], storage=None) -> Dict[str, Any]:
                 current[k] = bool(v)
             else:
                 current[k] = v
+
+    if 'company_name' in updates and 'firm_signatory_header' not in updates:
+        current['firm_signatory_header'] = f"For {current['company_name']}"
 
     _cached_settings = current
 

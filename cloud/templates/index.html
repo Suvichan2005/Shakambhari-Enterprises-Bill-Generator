@@ -4,6 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>{{ app_settings.company_name if app_settings else 'Shakambhari Enterprises' }} - Invoice Generator</title>
+    <!-- PWA & Mobile Web App Meta Tags -->
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="apple-touch-icon" href="/static/icon-192.png">
+    <meta name="theme-color" content="#2563eb">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="{{ app_settings.company_name if app_settings else 'Shakambhari' }} Bills">
+
     <!-- Modern Typography -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1652,6 +1662,10 @@
                     <span class="btn-label-desktop">Past Invoices</span>
                 </button>
                 <div class="nav-divider"></div>
+                <button type="button" id="pwa_install_btn" class="btn btn-nav-outline btn-nav-icon" style="display:none; color: var(--primary);" onclick="triggerPwaInstall()" title="Install App to Home Screen">
+                    <span>📲</span>
+                    <span class="btn-label-desktop">Install App</span>
+                </button>
                 <button type="button" class="btn btn-nav-outline btn-nav-icon" onclick="openSettingsModal()" title="Settings">
                     <span>⚙️</span>
                 </button>
@@ -2209,13 +2223,13 @@
 
     <!-- SETTINGS MODAL -->
     <div id="settings_modal" class="modal-overlay" style="display: none;">
-        <div class="modal-window" style="max-width: 680px;">
+        <div class="modal-window" style="max-width: 760px;">
             <div class="modal-header-modern">
                 <div class="modal-title-group">
                     <div class="modal-icon-badge" style="background: var(--slate-100); color: var(--slate-700);">⚙️</div>
                     <div>
-                        <h2 class="modal-title">Settings & Defaults</h2>
-                        <p class="modal-subtitle">Business details, numbering format, and AI preferences</p>
+                        <h2 class="modal-title">System Settings & Defaults</h2>
+                        <p class="modal-subtitle">Company profile, warehouse address, numbering format & AI model</p>
                     </div>
                 </div>
                 <button type="button" class="modal-close-btn" onclick="closeSettingsModal()">&times;</button>
@@ -2223,44 +2237,140 @@
 
             <div class="modal-body-scroll">
                 <form id="settings_form" onsubmit="saveAppSettings(event)">
-                    <div class="form-grid">
-                        <div class="field-group">
-                            <label class="field-label" for="cfg_company_name">Company Name</label>
-                            <input type="text" id="cfg_company_name" class="field-input" value="{{ app_settings.company_name if app_settings else 'Shakambhari Enterprises' }}" required>
+                    <!-- Section 1: Business Profile -->
+                    <div style="margin-bottom: 22px;">
+                        <div style="font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--primary); margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
+                            <span>🏢</span> Business & Tax Identity
                         </div>
-                        <div class="grid-2">
-                            <div class="field-group">
-                                <label class="field-label" for="cfg_company_gstin">Company GSTIN</label>
-                                <input type="text" id="cfg_company_gstin" class="field-input mono" value="{{ app_settings.company_gstin if app_settings else '19ACZPN5725A1Z8' }}">
+                        <div class="form-grid">
+                            <div class="grid-2">
+                                <div class="field-group">
+                                    <label class="field-label" for="cfg_company_name">Company Legal Name</label>
+                                    <input type="text" id="cfg_company_name" class="field-input" value="{{ app_settings.company_name if app_settings else 'Shakambhari Enterprises' }}" required>
+                                </div>
+                                <div class="field-group">
+                                    <label class="field-label" for="cfg_company_subtitle">Subtitle / Trade Line</label>
+                                    <input type="text" id="cfg_company_subtitle" class="field-input" value="{{ app_settings.company_subtitle if app_settings else 'Aluminium Utensils Manufacturing & Trading' }}">
+                                </div>
+                            </div>
+                            <div class="grid-2">
+                                <div class="field-group">
+                                    <label class="field-label" for="cfg_company_gstin">Company GSTIN</label>
+                                    <input type="text" id="cfg_company_gstin" class="field-input mono" value="{{ app_settings.company_gstin if app_settings else '19ACZPN5725A1Z8' }}">
+                                </div>
+                                <div class="field-group">
+                                    <label class="field-label" for="cfg_company_phone">Phone / WhatsApp</label>
+                                    <input type="text" id="cfg_company_phone" class="field-input" value="{{ app_settings.company_phone if app_settings else '' }}" placeholder="Optional contact phone">
+                                </div>
                             </div>
                             <div class="field-group">
-                                <label class="field-label" for="cfg_invoice_format">Invoice Format</label>
-                                <input type="text" id="cfg_invoice_format" class="field-input mono" value="{{ app_settings.invoice_number_format if app_settings else '{num}/2026-27' }}">
+                                <label class="field-label" for="cfg_company_address">Registered Office Address</label>
+                                <textarea id="cfg_company_address" class="field-textarea" rows="2">{{ app_settings.company_address if app_settings else '54/5A, Strand Road, Jorabagan, Kolkata - 700006' }}</textarea>
                             </div>
-                        </div>
-                        <div class="grid-2">
-                            <div class="field-group">
-                                <label class="field-label" for="cfg_default_item_desc">Default Item Description</label>
-                                <input type="text" id="cfg_default_item_desc" class="field-input" value="{{ app_settings.default_item_description if app_settings else 'Aluminium Utensils' }}">
-                            </div>
-                            <div class="field-group">
-                                <label class="field-label" for="cfg_default_hsn">Default HSN</label>
-                                <input type="text" id="cfg_default_hsn" class="field-input mono" value="{{ app_settings.default_hsn_code if app_settings else '76151030' }}">
-                            </div>
-                        </div>
-                        <div class="grid-2">
-                            <div class="field-group">
-                                <label class="field-label" for="cfg_default_delivery">Default Delivery (₹)</label>
-                                <input type="number" step="any" id="cfg_default_delivery" class="field-input" value="{{ app_settings.default_delivery_charge if app_settings else '0' }}">
-                            </div>
-                            <div class="field-group">
-                                <label class="field-label" for="cfg_signatory_title">Signatory Title</label>
-                                <input type="text" id="cfg_signatory_title" class="field-input" value="{{ app_settings.signatory_title if app_settings else 'Authorised Signatory' }}">
+                            <div class="grid-2">
+                                <div class="field-group">
+                                    <label class="field-label" for="cfg_company_state">State</label>
+                                    <input type="text" id="cfg_company_state" class="field-input" value="{{ app_settings.company_state if app_settings else 'West Bengal' }}">
+                                </div>
+                                <div class="field-group">
+                                    <label class="field-label" for="cfg_company_state_code">State Code</label>
+                                    <input type="text" id="cfg_company_state_code" class="field-input mono" value="{{ app_settings.company_state_code if app_settings else '19' }}">
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+                    <!-- Section 2: Dispatch & Warehouse -->
+                    <div style="margin-bottom: 22px; padding-top: 16px; border-top: 1px solid var(--slate-200);">
+                        <div style="font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--primary); margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
+                            <span>🚚</span> Warehouse & Logistics Defaults
+                        </div>
+                        <div class="form-grid">
+                            <div class="field-group">
+                                <label class="field-label" for="cfg_company_dispatch">Default Dispatch Origin (Warehouse)</label>
+                                <textarea id="cfg_company_dispatch" class="field-textarea" rows="2" placeholder="e.g. 129, Girish Ghosh Road, Belur, Howrah - 711202">{{ app_settings.company_dispatch_address if app_settings else '129, Girish Ghosh Road, Belur, Howrah - 711202' }}</textarea>
+                            </div>
+                            <div class="grid-2">
+                                <div class="field-group">
+                                    <label class="field-label" for="cfg_default_transport">Default Transport Mode</label>
+                                    <input type="text" id="cfg_default_transport" class="field-input" value="{{ app_settings.default_transport_mode if app_settings else '' }}" placeholder="Leave blank for manual entry">
+                                </div>
+                                <div class="field-group">
+                                    <label class="field-label" for="cfg_default_delivery">Default Delivery / Cartage (₹)</label>
+                                    <input type="number" step="any" id="cfg_default_delivery" class="field-input" value="{{ app_settings.default_delivery_charge if app_settings else '0' }}">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Section 3: Invoice & Item Defaults -->
+                    <div style="margin-bottom: 22px; padding-top: 16px; border-top: 1px solid var(--slate-200);">
+                        <div style="font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--primary); margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
+                            <span>🧾</span> Invoice & Item Defaults
+                        </div>
+                        <div class="form-grid">
+                            <div class="grid-2">
+                                <div class="field-group">
+                                    <label class="field-label" for="cfg_invoice_format">Invoice Numbering Pattern</label>
+                                    <input type="text" id="cfg_invoice_format" class="field-input mono" value="{{ app_settings.invoice_number_format if app_settings else '{num}/2026-27' }}">
+                                    <div class="field-hint">Use <code>{num}</code> for the auto-incrementing bill count.</div>
+                                </div>
+                                <div class="field-group">
+                                    <label class="field-label" for="cfg_default_tax_type">Default Tax Type</label>
+                                    <select id="cfg_default_tax_type" class="field-input">
+                                        <option value="IGST" {% if app_settings and app_settings.default_tax_type == 'IGST' %}selected{% endif %}>IGST (Inter-State 12%)</option>
+                                        <option value="CGST_SGST" {% if app_settings and app_settings.default_tax_type == 'CGST_SGST' %}selected{% endif %}>CGST + SGST (Intra-State 6% + 6%)</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="grid-2">
+                                <div class="field-group">
+                                    <label class="field-label" for="cfg_default_item_desc">Default Item Description</label>
+                                    <input type="text" id="cfg_default_item_desc" class="field-input" value="{{ app_settings.default_item_description if app_settings else 'Aluminium Utensils' }}">
+                                </div>
+                                <div class="field-group">
+                                    <label class="field-label" for="cfg_default_hsn">Default HSN Code</label>
+                                    <input type="text" id="cfg_default_hsn" class="field-input mono" value="{{ app_settings.default_hsn_code if app_settings else '76151030' }}">
+                                </div>
+                            </div>
+                            <div class="grid-2">
+                                <div class="field-group">
+                                    <label class="field-label" for="cfg_signatory_title">Signatory Title</label>
+                                    <input type="text" id="cfg_signatory_title" class="field-input" value="{{ app_settings.signatory_title if app_settings else 'Authorised Signatory' }}">
+                                </div>
+                                <div class="field-group">
+                                    <label class="field-label" for="cfg_firm_signatory_header">Firm Signatory Header</label>
+                                    <input type="text" id="cfg_firm_signatory_header" class="field-input" value="{{ app_settings.firm_signatory_header if app_settings else 'For Shakambhari Enterprises' }}">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Section 4: Multimodal AI Assistant -->
+                    <div style="margin-bottom: 22px; padding-top: 16px; border-top: 1px solid var(--slate-200);">
+                        <div style="font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--primary); margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
+                            <span>✨</span> Multimodal AI Assistant
+                        </div>
+                        <div class="form-grid">
+                            <div class="grid-2">
+                                <div class="field-group">
+                                    <label class="field-label" for="cfg_gemini_model">Primary Vision Model</label>
+                                    <select id="cfg_gemini_model" class="field-input">
+                                        <option value="gemini-3.8-flash" {% if not app_settings or app_settings.gemini_primary_model == 'gemini-3.8-flash' %}selected{% endif %}>Gemini 3.8 Flash (Default / Recommended)</option>
+                                        <option value="gemini-3.7-flash" {% if app_settings and app_settings.gemini_primary_model == 'gemini-3.7-flash' %}selected{% endif %}>Gemini 3.7 Flash</option>
+                                        <option value="gemini-3.5-flash" {% if app_settings and app_settings.gemini_primary_model == 'gemini-3.5-flash' %}selected{% endif %}>Gemini 3.5 Flash</option>
+                                    </select>
+                                </div>
+                                <div class="field-group">
+                                    <label class="field-label" for="cfg_gemini_api_key">Backend Gemini API Key</label>
+                                    <input type="password" id="cfg_gemini_api_key" class="field-input mono" placeholder="••••••••••••••••" autocomplete="new-password">
+                                    <div class="field-hint">Leave blank to retain active server key.</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--slate-200);">
                         <button type="button" class="btn btn-nav-outline" onclick="closeSettingsModal()">Cancel</button>
                         <button type="submit" class="btn btn-ai-glow">💾 Save Configuration</button>
                     </div>
@@ -3153,13 +3263,28 @@
             e.preventDefault();
             const updates = {
                 company_name: document.getElementById('cfg_company_name').value.trim(),
+                company_subtitle: document.getElementById('cfg_company_subtitle').value.trim(),
                 company_gstin: document.getElementById('cfg_company_gstin').value.trim(),
-                signatory_title: document.getElementById('cfg_signatory_title').value.trim(),
+                company_phone: document.getElementById('cfg_company_phone').value.trim(),
+                company_address: document.getElementById('cfg_company_address').value.trim(),
+                company_state: document.getElementById('cfg_company_state').value.trim(),
+                company_state_code: document.getElementById('cfg_company_state_code').value.trim(),
+                company_dispatch_address: document.getElementById('cfg_company_dispatch').value.trim(),
+                default_transport_mode: document.getElementById('cfg_default_transport').value.trim(),
+                default_delivery_charge: parseFloat(document.getElementById('cfg_default_delivery').value) || 0,
+                invoice_number_format: document.getElementById('cfg_invoice_format').value.trim(),
+                default_tax_type: document.getElementById('cfg_default_tax_type').value,
                 default_item_description: document.getElementById('cfg_default_item_desc').value.trim(),
                 default_hsn_code: document.getElementById('cfg_default_hsn').value.trim(),
-                default_delivery_charge: parseFloat(document.getElementById('cfg_default_delivery').value) || 0,
-                invoice_number_format: document.getElementById('cfg_invoice_format').value.trim()
+                signatory_title: document.getElementById('cfg_signatory_title').value.trim(),
+                firm_signatory_header: document.getElementById('cfg_firm_signatory_header').value.trim(),
+                gemini_primary_model: document.getElementById('cfg_gemini_model').value
             };
+
+            const newApiKey = document.getElementById('cfg_gemini_api_key').value.trim();
+            if (newApiKey) {
+                updates.gemini_backend_api_key = newApiKey;
+            }
 
             try {
                 const resp = await fetch('/api/settings', {
@@ -3169,11 +3294,11 @@
                 });
                 const res = await resp.json();
                 if (res.success) {
-                    alert('✓ Settings saved!');
+                    alert('✓ Settings saved successfully!');
                     closeSettingsModal();
                     location.reload();
                 } else {
-                    alert('Failed to save settings: ' + res.error);
+                    alert('Failed to save settings: ' + (res.error || 'Unknown error'));
                 }
             } catch (err) {
                 alert('Error saving settings: ' + err);
@@ -3238,6 +3363,53 @@
                     renderAiThumbnails();
                 }
             }
+        });
+
+        // ================= PWA INSTALLATION & SERVICE WORKER =================
+        let deferredPwaPrompt = null;
+
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js', { scope: '/' })
+                    .then(reg => {
+                        console.log('PWA ServiceWorker registered with scope:', reg.scope);
+                    })
+                    .catch(err => {
+                        console.warn('PWA ServiceWorker registration failed:', err);
+                    });
+            });
+        }
+
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPwaPrompt = e;
+            const installBtn = document.getElementById('pwa_install_btn');
+            if (installBtn) {
+                installBtn.style.display = 'inline-flex';
+            }
+        });
+
+        function triggerPwaInstall() {
+            if (!deferredPwaPrompt) {
+                alert('App is ready! To install on your phone, tap Chrome menu (⋮) and select "Install app" or "Add to Home screen".');
+                return;
+            }
+            deferredPwaPrompt.prompt();
+            deferredPwaPrompt.userChoice.then((choiceResult) => {
+                if (choiceResult.choice === 'accepted') {
+                    console.log('User installed the PWA');
+                    const installBtn = document.getElementById('pwa_install_btn');
+                    if (installBtn) installBtn.style.display = 'none';
+                }
+                deferredPwaPrompt = null;
+            });
+        }
+
+        window.addEventListener('appinstalled', () => {
+            console.log('PWA installed successfully');
+            const installBtn = document.getElementById('pwa_install_btn');
+            if (installBtn) installBtn.style.display = 'none';
+            deferredPwaPrompt = null;
         });
 
         // Initialize on load

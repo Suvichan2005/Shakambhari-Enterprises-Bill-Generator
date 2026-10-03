@@ -1,55 +1,58 @@
-# Shakambhari Bill Generator 🧾✨
+# Shakambhari Bill Generator 🧾
 
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/Flask-3.0+-000000?logo=flask&logoColor=white)](https://flask.palletsprojects.com/)
 [![Google Cloud Run](https://img.shields.io/badge/Google_Cloud-Cloud_Run-4285F4?logo=googlecloud&logoColor=white)](https://cloud.google.com/run)
 [![Firebase Hosting](https://img.shields.io/badge/Firebase-Hosting-FFCA28?logo=firebase&logoColor=black)](https://firebase.google.com/)
-[![Google Gemini](https://img.shields.io/badge/Gemini_3.8_Flash-Multimodal_Vision-8E75B2?logo=googlegemini&logoColor=white)](https://aistudio.google.com/)
-[![Google Sheets API](https://img.shields.io/badge/Google_Sheets-Ledger_Database-34A853?logo=googlesheets&logoColor=white)](https://developers.google.com/sheets/api)
-[![Google Cloud Storage](https://img.shields.io/badge/Google_Cloud-Storage_(GCS)-4285F4?logo=googlecloudstorage&logoColor=white)](https://cloud.google.com/storage)
+[![Google Gemini](https://img.shields.io/badge/Gemini_3.8_Flash-Vision_API-8E75B2?logo=googlegemini&logoColor=white)](https://aistudio.google.com/)
+[![Google Sheets API](https://img.shields.io/badge/Google_Sheets-Database_Ledger-34A853?logo=googlesheets&logoColor=white)](https://developers.google.com/sheets/api)
+[![PWA](https://img.shields.io/badge/PWA-Installable-5A0FC8?logo=pwa&logoColor=white)](https://web.dev/progressive-web-apps/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> **A modern, elderly-friendly automated invoice generation and business management platform.**  
-> Originally engineered to solve real-world billing bottlenecks for an aluminium utensils manufacturing business, transitioning paper-based workflows into a high-precision, AI-powered system running seamlessly on mobile, tablet, and desktop.
+A web application that automates Indian GST tax invoice generation from handwritten paper chits, weight-scale slips, and voice notes. Built for a family wholesale metal manufacturing and trading business, and deployed on Google Cloud Run and Firebase Hosting.
 
 ---
 
-## 🌟 Live Deployment
-- **Production Web App:** [https://shakambhari.web.app](https://shakambhari.web.app) *(Powered by Firebase CDN routed to Cloud Run)*
-- **Direct Cloud Run URL:** `https://shakambhari-invoices-529104378195.asia-south1.run.app`
+## 🔗 Live Links
+- **Production Web App (PWA):** [https://shakambhari.web.app](https://shakambhari.web.app)
+- **Direct Cloud Run Endpoint:** `https://shakambhari-invoices-529104378195.asia-south1.run.app`
 
 ---
 
-## 🚀 Key Features
+## 💡 Background & Motivation
 
-### 📸 Multimodal Vision AI Assistant (Gemini 3.8 Flash)
-- **Rough Chit & Slip Scanner:** Dad can take a phone photo (`capture="environment"`) or upload multiple images of handwritten paper chits, weight bridge slips, or transport challans.
-- **Smart Entity & Tax Extraction:** Automatically identifies buyer parties, match against database records, parses bag counts, net weights, rates, delivery charges, and GST type.
-- **Failover Model Hierarchy:** Powered primarily by **Google Gemini 3.8 Flash Vision**, with automatic fallback across `Gemini 3.7 Flash` $\rightarrow$ `Gemini 3.5 Flash` $\rightarrow$ `Gemini 3.5 Flash-Lite` $\rightarrow$ `Flash-Latest`.
-- **Elderly-First Safety Design:** **Autofill Only** — the AI populates form fields on the screen and never generates or commits an invoice automatically. Total manual control remains with the user to review, edit, or append before generating.
-- **1-Tap Quick Shortcut Chips:** Tap common preset chips (`Das Metal`, `M/S Manik Store`, `Utensils 2 Bags`, `Gaya Transport`, `Delivery ₹400`) to instantly append instructions without typing.
-- **Clipboard Paste Support:** Press `Ctrl + V` anywhere on desktop to immediately open the AI scanner with the pasted screenshot.
-- **Visiting Card Scanner:** Instant 1-tap extraction of business cards to create new Buyer Profiles in seconds.
+In small wholesale manufacturing businesses in India (like our family's aluminium utensil trading firm in Howrah/Kolkata), transactions don't start in an ERP system. They start as scribbled handwriting on paper slips, weighbridge chits, or WhatsApp text notes—for example:
+> *"Das Metal 2 bags utensils 89.080 kg @ 400 Gaya transport delivery 400"*
 
-### 📄 Pixel-Perfect Dynamic Document Engine
-- **Master Excel Architecture:** Programmatically renders bills using `openpyxl` against a canonical master template (`invoice_template_2026_27.xlsx`).
-- **Dynamic Cell Formatting:** Deep-clones borders, fonts, alignments, and formulas across dynamic line items.
-- **High-Fidelity PDF Generation:** Headless compilation via LibreOffice / WeasyPrint with embedded digital signatures and formal *"Authorised Signatory"* validation.
-- **Automatic E-Waybill Synchronization:** Intelligent linkage where E-Waybill Date automatically tracks Invoice Date when an E-Waybill Number is present, keeping clean empty headers when unassigned.
+Previously, turning these slips into GST-compliant tax invoices meant manual data entry into Excel on a desktop computer. This was slow, prone to arithmetic errors, and difficult to do on a mobile phone while working at the warehouse or godown.
 
-### 🏛️ Indian GST Compliance Engine
-- **Intra-State vs. Inter-State Logic:** Automatically distinguishes between West Bengal local sales (`CGST 9% + SGST 9%`) and inter-state transactions (`IGST 18%` for Bihar, Assam, Jharkhand, etc.).
-- **Precise Penny-Rounding:** Implements half-up decimal normalization preventing standard IEEE 754 floating-point rounding anomalies.
-- **Automated Currency-to-Words:** Automatically renders full legal amounts in words (e.g., *"Rupees Forty-Three Thousand Seven Hundred Only"*).
+I built this application to solve that problem. A user can snap a photo of a rough paper slip or speak into the microphone. The application parses the details using Gemini Vision, populates the invoice form, lets the user review and edit the fields, and produces a printable PDF and Excel invoice in a couple of seconds.
 
-### ⚙️ Dynamic Frontend Settings & White-Labeling
-- **In-App Configuration UI:** Manage business identity on the fly without touching code or redeploying:
-  - Custom Company Name, Subtitle, GSTIN, and State Code
-  - Default Item Descriptions & HSN codes (e.g., `76151030`)
-  - Default Delivery Charges & Transport Modes
-  - Primary AI Model selection & API Key management
-  - Numbering format pattern (e.g., `{num}/2026-27`)
-- **Cloud-Synced Persistence:** Settings persist locally and sync across Google Cloud Storage (`config/app_settings.json`).
+---
+
+## 🛠️ Key Design Choices & Trade-offs
+
+### 1. Google Sheets as the Primary Ledger Database
+Instead of running a dedicated PostgreSQL or MySQL instance, invoice records and buyer directories are stored directly in a Google Sheet via the Google Sheets API:
+- **Zero maintenance & \$0 cost:** No database server to monitor or manage.
+- **Accessible to non-technical users:** My family members and our accountant can view, search, export, and audit invoice history directly using the Google Sheets mobile app without needing a custom admin dashboard or SQL access.
+- **Disaster recovery backup:** Every generated invoice file (both `.xlsx` and `.pdf`) is also automatically archived to a private Google Cloud Storage (GCS) bucket.
+
+### 2. Serverless Cloud Hosting (Cloud Run + Firebase Hosting)
+- **Docker container on Cloud Run:** Scales down to zero instances when not in use, keeping hosting costs within GCP's free tier.
+- **Firebase Hosting as Reverse Proxy:** Provides clean CDN caching and a branded `.web.app` domain pointing to the Cloud Run container in the `asia-south1` (Mumbai) region.
+
+### 3. Human-in-the-Loop AI (Form-Fill Only, Never Auto-Commit)
+Handwritten Indian trade chits often contain abbreviations and informal phrasing. While Gemini Vision extracts parties, weights, and rates with high accuracy, the system has a strict architectural rule:
+- The AI **only pre-fills the input fields** on the screen.
+- It **never automatically generates, saves, or finalizes a bill**.
+- A human must review the extracted numbers, adjust rates or weights if needed, and click "Generate Invoice" manually.
+
+### 4. Progressive Web App (PWA) Support
+Instead of maintaining a separate Android native app, the web app includes a Web App Manifest (`manifest.json`) and a Service Worker (`sw.js`). When opened in mobile Chrome, it can be installed to the phone's home screen with 1 tap, running in standalone full-screen mode without browser address bars.
+
+### 5. Template Formatting Engine
+Rather than creating spreadsheets from scratch in Python, the backend uses `openpyxl` to write values into a predefined master template (`invoice_template_2026_27.xlsx`). This preserves cell borders, formulas, alignments, and print margins needed for physical GST invoices, followed by headless PDF generation.
 
 ---
 
@@ -57,140 +60,119 @@
 
 ```mermaid
 flowchart TD
-    subgraph Client ["Client Layer (Mobile / Desktop / Dad's Phone)"]
-        UI["Web UI (shakambhari.web.app)"]
-        Camera["Camera Snap / Rough Slip Upload"]
-        SettingsModal["⚙️ Dynamic Settings UI"]
+    User([📱 Mobile / Desktop Browser]) -->|HTTPS| Firebase[🔥 Firebase Hosting<br>shakambhari.web.app]
+    Firebase -->|Reverse Proxy / Rewrites| CloudRun[⚡ Google Cloud Run<br>Flask App in Docker]
+    
+    subgraph Ingestion & AI
+        CloudRun -->|Image / Voice Notes| Gemini[✨ Gemini 3.8 / 3.7 Vision API]
+        Gemini -->|Structured JSON Payload| CloudRun
     end
-
-    subgraph Edge ["Edge & Routing Layer"]
-        Firebase["Firebase Hosting (CDN Rewrites)"]
+    
+    subgraph Data & Storage
+        CloudRun -->|Append Ledger & Fetch Profiles| Sheets[📊 Google Sheets API v4]
+        CloudRun -->|Archive PDF & XLSX Backups| GCS[🪣 Google Cloud Storage]
     end
-
-    subgraph Compute ["Serverless Backend (Google Cloud Run - asia-south1)"]
-        Flask["Flask 3.0 Web Application (Gunicorn)"]
-        AIEngine["Gemini 3.8 Flash Vision Engine"]
-        ExcelEngine["Excel & PDF Generation Engine (openpyxl + LibreOffice)"]
-        SettingsMgr["Dynamic Settings Manager"]
+    
+    subgraph Document Generation
+        CloudRun -->|Populate Cells & Keep Formatting| OpenPyXL[📑 OpenPyXL Template Engine]
+        CloudRun -->|Headless Conversion| PDFEngine[📄 LibreOffice / WeasyPrint]
     end
-
-    subgraph GoogleCloud ["Google Cloud Platform & External Services"]
-        GeminiAPI["Google Gemini API (3.8 Flash / 3.7 Flash)"]
-        Sheets["Google Sheets API (Real-time Ledger & Buyers DB)"]
-        GCS["Google Cloud Storage (Templates, XLSX & PDF Archives)"]
-    end
-
-    UI -->|HTTPS Request| Firebase
-    Firebase -->|Reverse Proxy| Flask
-    Camera -->|Base64 Image / Notes| Flask
-    SettingsModal -->|POST /api/settings| SettingsMgr
-
-    Flask --> AIEngine
-    AIEngine -->|Vision Inference| GeminiAPI
-    AIEngine -->|Extracted JSON Payload| UI
-
-    UI -->|Generate Invoice Form POST| Flask
-    Flask --> ExcelEngine
-    ExcelEngine -->|Fetch Master Template| GCS
-    ExcelEngine -->|Store XLSX & PDF| GCS
-    ExcelEngine -->|Append Ledger Record| Sheets
-    SettingsMgr -->|Persist Settings| GCS
 ```
 
 ---
 
-## 💻 Quickstart (Run Locally)
+## 🌟 Core Features
 
-### 1. Clone the Repository
-```bash
-git clone https://github.com/Suvichan2005/Shakambhari-Enterprises-Bill-Generator.git
-cd Shakambhari-Enterprises-Bill-Generator
-```
-
-### 2. Setup Virtual Environment
-```bash
-python -m venv .venv
-
-# On Windows:
-.venv\Scripts\activate
-
-# On macOS/Linux:
-source .venv/bin/activate
-```
-
-### 3. Install Dependencies
-```bash
-pip install -r requirements.txt
-```
-
-### 4. Configure Environment
-Copy `.env.example` to `.env`:
-```bash
-cp .env.example .env
-```
-*(Optional for local testing)* Add your free Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey) into `GEMINI_API_KEY`.
-
-### 5. Start the Local Server
-```bash
-python app.py
-```
-Open [http://localhost:5000](http://localhost:5000) in your browser. Default local login: `shakambhari123@`.
+- **Multimodal Slip Ingestion:** Upload or take a picture of paper slips, weight chits, or visiting cards. Clipboard paste (`Ctrl + V`) is supported on desktop.
+- **Voice Input:** Built-in microphone button using the Web Speech API to dictate order instructions in English/Hindi.
+- **Fallback AI Cascade:** Uses `gemini-3.8-flash` primarily, with automatic fallback to `gemini-3.7-flash` or `gemini-3.5-flash` if rate limits occur.
+- **GST Calculations:** Automatic calculation of taxable value, IGST (inter-state 12%) vs CGST+SGST (intra-state 6% + 6%), delivery charges, and round-off to the nearest rupee.
+- **Sequential Numbering:** Tracks existing invoices in Google Sheets and GCS to suggest the next sequential invoice number for the active financial year (e.g. `62/2026-27`).
+- **E-Waybill Support:** Optional E-waybill number and date fields, with auto-sync to invoice date.
+- **Dispatch Warehouse Flexibility:** Alternate dispatch address selection (e.g., warehouse in Belur vs registered office in Strand Road).
+- **Buyer Directory:** Auto-complete search across saved buyers with 1-click loading of GSTIN, address, and state code.
+- **Dynamic Settings UI:** In-app modal (`⚙️`) to update business name, address, GSTIN, default HSN, default delivery charges, and AI preferences without touching code.
 
 ---
 
-## 🛠️ White-Label & Customization Guide (For Other Businesses)
+## 💻 Running Locally
 
-If you are cloning this repository to adapt it for your own business or family enterprise, follow these steps:
+### Prerequisites
+- Python 3.11 or higher
+- (Optional) A free Google Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey)
 
-### 1. Customize via the In-App Settings UI
-Click **⚙️ Settings & Defaults** in the top navigation bar:
-- **Company Name:** Change to your business name (e.g., `Acme Steel Works`).
-- **GSTIN & Address:** Enter your firm's GSTIN and registered dispatch address.
-- **Signatory Title:** Change *"Authorised Signatory"* to your custom title or designation.
-- **Default Item & HSN:** Set your primary product name and 8-digit HSN code.
-- **Numbering Scheme:** Change format string (e.g., `INV-{num}-2026`).
+### Steps
 
-### 2. Customizing the Excel Template
-The application uses openpyxl to write directly to predefined coordinates in `cloud/invoice_template_2026_27.xlsx`:
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/Suvichan2005/Shakambhari-Enterprises-Bill-Generator.git
+   cd Shakambhari-Enterprises-Bill-Generator
+   ```
 
-| Cell Coordinate | Field Written | Description |
-|---|---|---|
-| `A2` | Invoice Number | `INVOICE No. 062/2026-27` |
-| `F2` | Invoice Date | `Date : 05/10/2026` |
-| `A3` | E-Waybill Number | `Ewaybill No. 123456789012` *(or blank header)* |
-| `F3` | E-Waybill Date | `Ewaybill Date : 05/10/2026` *(or blank header)* |
-| `F5:F9` | Dispatch / Ship From | Custom warehouse or origin factory address |
-| `A13:A18` | Buyer Details | Name, Address, City/PIN, State Code, GSTIN |
-| `F13:F18` | Ship To Details | Consignee address *(mirrors buyer)* |
-| `A20` | Transport Mode | `Mode of Transport: By Road` |
-| `A22:A31` | Item Descriptions | `1. Aluminium Utensils (2 Bags)` |
-| `F22:F31` | Item Quantities | Weight in kilograms / units |
-| `G22:G31` | Item Rates | Price per unit/kg |
-| `H22:H31` | Item HSN Codes | e.g. `76151030` |
-| `I22:I31` | Item Amounts | Computed taxable amounts |
-| `I32` | Subtotal Amount | Sum of taxable line items |
-| `I33` | Delivery Charges | Freight / freight forwarding fee |
-| `E34 / I34` | Tax 1 Rate & Amount | CGST 9% (or IGST 18%) |
-| `E35 / I35` | Tax 2 Rate & Amount | SGST 9% (if intra-state) |
-| `I37` | Round Off | Deviation to nearest whole rupee |
-| `I38` | Total Invoice Amount | Final payable amount |
-| `A40` | Amount in Words | Legal textual representation |
-| `G44` | Company Header | `For Shakambhari Enterprises` |
-| `G48` | Signature Footer | `Authorised Signatory` *(sits below image)* |
+2. **Create and activate a virtual environment:**
+   ```bash
+   python -m venv .venv
 
-You can modify fonts, logos, watermarks, or color themes directly in Excel while preserving these coordinate cells!
+   # On Windows:
+   .venv\Scripts\activate
 
-### 3. Gemini Vision AI Setup
-- **Free Tier (Zero Cost):** Get a free API key at [Google AI Studio](https://aistudio.google.com/apikey). Provides 15 Requests Per Minute (RPM) and 1,500 Requests Per Day, which is more than sufficient for small businesses.
-- **Paid Tier (Pay-As-You-Go):** For high-volume factories requiring unlimited RPM, enable billing in AI Studio or GCP. At ~$0.0001 per invoice scan, processing 1,000 invoices costs less than $0.10 (₹8).
-- **Backend Setup:** Set `GEMINI_API_KEY="your-key"` in Cloud Run or your `.env` file so mobile users never need to configure keys manually.
+   # On Linux/macOS:
+   source .venv/bin/activate
+   ```
+
+3. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Set environment variables:**
+   Copy `.env.example` to `.env`:
+   ```bash
+   cp .env.example .env
+   ```
+   Add your `GEMINI_API_KEY` in `.env` if you want to test the slip scanner locally.
+
+5. **Run the application:**
+   ```bash
+   python app.py
+   ```
+   Open [http://localhost:5000](http://localhost:5000) in your browser. Log in with the `APP_PASSWORD` configured in your `.env`.
 
 ---
 
-## 🌐 Cloud Deployment (Google Cloud Run + Firebase Hosting)
+## ⚙️ Adapting for Your Own Business (White-Labeling)
 
-### Step 1: Deploy Backend to Google Cloud Run
-From the root directory:
+If you are cloning this project for another firm:
+
+1. **Via the Web Interface:**
+   - Log in and click the **⚙️ Settings** icon in the top navigation bar.
+   - Update the **Company Legal Name**, **GSTIN**, **Registered Office Address**, **Default Warehouse Address**, and **Invoice Number Format**.
+   - Changes are saved to `app_settings.json` locally and synced to GCS in cloud deployments.
+
+2. **Excel Template Customization:**
+   - The master template is stored at `cloud/invoice_template_2026_27.xlsx`.
+   - The code writes to standard cell coordinates:
+     - `A2`: Invoice Number
+     - `F2`: Invoice Date
+     - `A3` & `F3`: E-Waybill Number & Date
+     - `F5:F9`: Dispatch Origin Address
+     - `A13:A18`: Buyer Details (Name, Address, GSTIN)
+     - `F13:F18`: Ship To Details
+     - `A20`: Transport Mode
+     - `A22:I31`: Line Items (Description, Quantity, Rate, HSN, Taxable Amount)
+     - `I33`: Delivery Charges
+     - `E34/I34` & `E35/I35`: GST Rates and Tax Amounts
+     - `I37`: Round Off
+     - `I38`: Invoice Total
+     - `A40`: Amount in Words
+   - You can update company logos, fonts, or borders in Excel as long as the cell coordinates remain consistent.
+
+---
+
+## ☁️ Deployment
+
+### 1. Google Cloud Run
+Build and deploy the container directly from the `cloud/` directory:
 ```powershell
 gcloud run deploy shakambhari-invoices `
     --source cloud `
@@ -201,67 +183,52 @@ gcloud run deploy shakambhari-invoices `
     --set-env-vars "GOOGLE_CLOUD_PROJECT=shakambhari,SPREADSHEET_ID=your_sheet_id,GCS_BUCKET_NAME=your_bucket_name,APP_PASSWORD=your_password,FLASK_ENV=production,SESSION_COOKIE_SECURE=true,GEMINI_API_KEY=your_key"
 ```
 
-### Step 2: Connect Custom Domain via Firebase Hosting
-Link your Cloud Run service to Firebase Hosting for clean CDN caching and a branded `.web.app` URL:
+### 2. Firebase Hosting CDN
+Deploy hosting rewrites to connect `shakambhari.web.app` to Cloud Run:
 ```bash
 firebase deploy --only hosting --project shakambhari
 ```
-`firebase.json` automatically routes all requests to Cloud Run in `asia-south1`:
-```json
-{
-  "hosting": {
-    "public": "public",
-    "rewrites": [
-      {
-        "source": "**",
-        "run": {
-          "serviceId": "shakambhari-invoices",
-          "region": "asia-south1"
-        }
-      }
-    ]
-  }
-}
-```
 
 ---
 
-## 📁 Repository Structure
+## 📁 Project Structure
 
 ```
-├── app.py                       # Local Flask application entry point
-├── config.py                    # Local path resolution & environment defaults
-├── settings_manager.py          # Dynamic business settings engine (local & GCS sync)
-├── buyer_profiles.json          # Seed buyer profiles directory
-├── transport_modes.json         # Seed transport carriers catalog
-├── firebase.json                # Firebase Hosting CDN rewrite specification
-├── .firebaserc                  # Firebase project linkage
+├── app.py                       # Local Flask application
+├── settings_manager.py          # Dynamic configuration manager (local & GCS)
+├── buyer_profiles.json          # Seed buyer records
+├── transport_modes.json         # Seed transport carrier records
+├── firebase.json                # Firebase Hosting rewrite configuration
+├── .firebaserc                  # Firebase project configuration
+├── static/                      # Static assets, icons, manifest, service worker
+│   ├── manifest.json            # PWA Web App Manifest
+│   ├── sw.js                    # PWA Service Worker
+│   ├── icon-192.png             # PWA app icons (192x192 & 512x512)
+│   └── favicon.ico              # Favicon
+├── templates/                   # HTML5 Jinja2 templates
+│   ├── index.html               # Main invoicing form, AI assistant & Settings UI
+│   ├── success.html             # Download screen (PDF / XLSX)
+│   ├── profile_form.html        # Buyer profile creation form
+│   └── list_profiles.html       # Buyer directory view
 ├── cloud/                       # Cloud Run deployment package
-│   ├── app_cloud.py             # Cloud Flask backend with Gemini 3.8 Vision & DB engines
-│   ├── cloud_storage.py         # Google Cloud Storage interface (PDF/XLSX/Templates)
-│   ├── sheets_db.py             # Google Sheets API ledger database driver
-│   ├── settings_manager.py      # Cloud settings manager (with GCS bucket synchronization)
-│   ├── app_settings.json        # Persistent settings definition
-│   ├── Dockerfile               # Production container (Python 3.11 + LibreOffice Calc)
-│   ├── deploy_cloudrun.ps1      # Automated Cloud Run deployment script
+│   ├── app_cloud.py             # Cloud Flask backend
+│   ├── sheets_db.py             # Google Sheets API ledger driver
+│   ├── cloud_storage.py         # Google Cloud Storage driver
+│   ├── Dockerfile               # Container build (Python 3.11 + LibreOffice)
+│   ├── deploy_cloudrun.ps1      # Automated deployment script
 │   └── invoice_template_2026_27.xlsx # Master Excel invoice template
-├── templates/                   # Frontend HTML5 UI (Jinja2)
-│   ├── index.html               # Main invoicing screen, Gemini AI modal & Settings modal
-│   ├── success.html             # Download screen (PDF / XLSX 1-click actions)
-│   ├── profile_form.html        # Buyer profile form with visiting card scanner
-│   └── list_profiles.html       # Manage buyer directory
-└── requirements.txt             # Core Python package dependencies
+└── public/                      # Static public folder for Firebase CDN hosting
 ```
 
 ---
 
-## 🛡️ Security & Privacy
-- **Stateless Authentication:** All routes are protected by session authentication with HTTP-only, secure cookies.
-- **Zero-Storage of API Keys on Client:** Cloud Run securely stores the Gemini key in environment variables, preventing client exposure.
-- **Private GCP Bucket:** Generated invoices and ledger databases are stored with private IAM access; files are fetched via authenticated server proxies.
-- **No Unintended Commits:** Credentials, `.env` files, temporary XLSX outputs, and service account keys are strictly excluded via `.gitignore`.
+## 🔒 Security Practices
+
+- **Push Protection & Secret Scrubbing:** No API keys, passwords, or service account JSON files are committed to version control.
+- **Session Authentication:** Protected by server-side session cookies with `Secure`, `HttpOnly`, and `SameSite` flags.
+- **Scoped IAM Credentials:** Cloud Run uses a dedicated Google Cloud service account with minimal IAM permissions limited to the specific Google Sheet and GCS bucket.
 
 ---
 
-## 📜 License
-Distributed under the **MIT License**. See `LICENSE` for more information. Built with ❤️ for family business empowerment.
+## 📄 License
+This project is open-source under the [MIT License](LICENSE).

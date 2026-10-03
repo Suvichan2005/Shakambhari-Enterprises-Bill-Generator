@@ -18,7 +18,7 @@ import subprocess
 from copy import copy
 from decimal import Decimal, ROUND_HALF_UP
 from collections import defaultdict, deque
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file, Response, session
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file, Response, session, send_from_directory, make_response
 from datetime import datetime
 import uuid
 from num2words import num2words
@@ -1250,6 +1250,32 @@ def generate_pdf_from_excel(excel_bytes: bytes, excel_filename: str) -> Optional
             return f.read()
 
 
+# ===================== PWA & STATIC ASSET ROUTES =====================
+
+@app.route('/manifest.json')
+def manifest_json():
+    """Serve PWA Web App Manifest."""
+    static_dir = os.path.join(os.path.dirname(__file__), 'static')
+    return send_from_directory(static_dir, 'manifest.json', mimetype='application/manifest+json')
+
+
+@app.route('/sw.js')
+def service_worker():
+    """Serve PWA Service Worker with root scope permissions."""
+    static_dir = os.path.join(os.path.dirname(__file__), 'static')
+    resp = make_response(send_from_directory(static_dir, 'sw.js', mimetype='application/javascript'))
+    resp.headers['Service-Worker-Allowed'] = '/'
+    resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    return resp
+
+
+@app.route('/favicon.ico')
+def favicon():
+    """Serve favicon."""
+    static_dir = os.path.join(os.path.dirname(__file__), 'static')
+    return send_from_directory(static_dir, 'favicon.ico', mimetype='image/x-icon')
+
+
 # ===================== ROUTE HANDLERS =====================
 
 @app.route('/')
@@ -2311,12 +2337,6 @@ def handle_unexpected_error(error):
 def health_check():
     """Health check endpoint for Cloud Run/App Engine."""
     return jsonify({'status': 'healthy', 'timestamp': datetime.now().isoformat()})
-
-
-@app.route('/favicon.ico')
-def favicon():
-    """Return empty favicon response to avoid repeated 404 noise in logs."""
-    return ('', 204)
 
 
 # ===================== MAIN =====================

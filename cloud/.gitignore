@@ -2,6 +2,7 @@
 service-account.json
 *.json
 !package.json
+!static/manifest.json
 
 # Environment files
 .env
