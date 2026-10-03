@@ -9,6 +9,7 @@ This module handles all Google Sheets operations for:
 """
 
 import os
+import re
 import json
 from typing import List, Dict, Optional
 from datetime import datetime
