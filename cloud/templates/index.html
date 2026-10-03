@@ -2012,7 +2012,7 @@
 
                     <div class="slip-signatory">
                         <div class="slip-sign-title">{{ app_settings.firm_signatory_header if app_settings else 'For Shakambhari Enterprises' }}</div>
-                        <img src="/static/signature.png" alt="Signature" class="slip-sign-img" onerror="this.style.display='none'">
+                        <div class="slip-sign-space" style="height: 28px;"></div>
                         <div class="slip-sign-sub">{{ app_settings.signatory_title if app_settings else 'Authorised Signatory' }}</div>
                     </div>
                 </div>
@@ -2723,6 +2723,10 @@
             updatePreview();
         }
 
+        function toggleShipToSection(isChecked) {
+            handleShipToToggle(isChecked);
+        }
+
         // ================= LIVE PREVIEW CALCULATION =================
         function updatePreview() {
             const invNum = document.getElementById('invoice_number').value || '-';
@@ -3235,16 +3239,24 @@
             }
 
             // 3. E-Waybill Number & Date
+            const ewayCb = document.getElementById('ewaybill_toggle');
             const ewayNo = document.getElementById('ewaybill_number');
             const ewayDt = document.getElementById('ewaybill_date');
-            if (ewayNo) ewayNo.value = inv.ewaybill_number || '';
-            if (ewayDt) {
-                let edStr = String(inv.ewaybill_date || '').trim();
-                if (/^\d{2}\/\d{2}\/\d{4}$/.test(edStr)) {
-                    const parts = edStr.split('/');
-                    edStr = `${parts[2]}-${parts[1]}-${parts[0]}`;
+            if (inv.ewaybill_number && String(inv.ewaybill_number).trim()) {
+                if (ewayCb) ewayCb.checked = true;
+                handleEwaybillToggle(true);
+                if (ewayNo) ewayNo.value = inv.ewaybill_number;
+                if (ewayDt) {
+                    let edStr = String(inv.ewaybill_date || '').trim();
+                    if (/^\d{2}\/\d{2}\/\d{4}$/.test(edStr)) {
+                        const parts = edStr.split('/');
+                        edStr = `${parts[2]}-${parts[1]}-${parts[0]}`;
+                    }
+                    ewayDt.value = edStr;
                 }
-                ewayDt.value = edStr;
+            } else {
+                if (ewayCb) ewayCb.checked = false;
+                handleEwaybillToggle(false);
             }
 
             // 4. Buyer Selection
@@ -3300,12 +3312,12 @@
             const stCb = document.getElementById('ship_to_enabled');
             if (inv.ship_to_details && (Array.isArray(inv.ship_to_details) ? inv.ship_to_details.length > 0 : String(inv.ship_to_details).trim())) {
                 if (stCb) stCb.checked = true;
-                toggleShipToSection(true);
+                handleShipToToggle(true);
                 const stStr = Array.isArray(inv.ship_to_details) ? inv.ship_to_details.join('\n') : String(inv.ship_to_details);
                 document.getElementById('ship_to').value = stStr;
             } else {
                 if (stCb) stCb.checked = false;
-                toggleShipToSection(false);
+                handleShipToToggle(false);
                 document.getElementById('ship_to').value = '';
             }
 
@@ -3464,10 +3476,10 @@
         }
 
         window.addEventListener('beforeinstallprompt', (e) => {
-            e.preventDefault();
-            deferredPwaPrompt = e;
             const installBtn = document.getElementById('pwa_install_btn');
             if (installBtn) {
+                e.preventDefault();
+                deferredPwaPrompt = e;
                 installBtn.style.display = 'inline-flex';
             }
         });
