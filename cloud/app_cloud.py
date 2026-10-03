@@ -1962,24 +1962,38 @@ def api_get_invoice(invoice_number):
             app.logger.warning("Could not fetch invoice from Sheets: %s", exc)
 
     if not invoice:
-        # Fallback search by filename in GCS
+        # Fallback search by filename or bill number in GCS
         pattern = _safe_filename(invoice_number.replace('/', '-'), '')
+        num_m = re.search(r'(\d+)', invoice_number)
+        num_val = int(num_m.group(1)) if num_m else None
         storage = get_cloud_storage()
         try:
-            blobs = list(storage.client.list_blobs(storage.bucket_name, prefix=f"{storage.INVOICES_FOLDER}Invoice_{pattern}"))
-            if blobs:
-                name = blobs[0].name.replace(storage.INVOICES_FOLDER, '')
-                file_bytes = storage.download_invoice_xlsx(name)
-                if file_bytes:
-                    invoice = _extract_invoice_data_from_xlsx_bytes(file_bytes, name)
-        except Exception:
-            pass
+            blobs = list(storage.client.list_blobs(storage.bucket_name, prefix=f"{storage.INVOICES_FOLDER}Invoice_"))
+            for b in blobs:
+                name = b.name.replace(storage.INVOICES_FOLDER, '')
+                if pattern and pattern in name:
+                    file_bytes = storage.download_invoice_xlsx(name)
+                    if file_bytes:
+                        invoice = _extract_invoice_data_from_xlsx_bytes(file_bytes, name)
+                        break
+                elif num_val is not None:
+                    m = re.search(r'Invoice_0*(\d+)', name)
+                    if m and int(m.group(1)) == num_val:
+                        file_bytes = storage.download_invoice_xlsx(name)
+                        if file_bytes:
+                            invoice = _extract_invoice_data_from_xlsx_bytes(file_bytes, name)
+                            break
+        except Exception as exc:
+            app.logger.warning("Error during GCS fallback for %s: %s", invoice_number, exc)
 
     if not invoice:
-        return jsonify({'error': 'Invoice not found'}), 404
+        return jsonify({'error': 'Invoice not found', 'success': False}), 404
 
     invoice = _enrich_invoice_for_frontend(invoice)
-    return jsonify(invoice)
+    resp = dict(invoice)
+    resp['invoice'] = invoice
+    resp['success'] = True
+    return jsonify(resp)
 
 
 @app.route('/api/invoice-file/<path:filename>')

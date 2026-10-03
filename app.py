@@ -722,6 +722,33 @@ def calculate_preview_route():
         return jsonify({"error": str(e)}), 400
 
 
+@app.route('/api/invoice/<path:invoice_number>')
+def api_get_invoice(invoice_number):
+    """Compatibility route to fetch an invoice by number or filename."""
+    clean_target = (invoice_number or '').replace('/', '-').replace('\\', '-').strip()
+    m_num = re.search(r'(\d+)', clean_target)
+    target_int = int(m_num.group(1)) if m_num else None
+
+    # Search generated invoices folder
+    if os.path.exists(OUTPUT_DIR):
+        for fname in os.listdir(OUTPUT_DIR):
+            if not fname.endswith('.xlsx'):
+                continue
+            match = False
+            if clean_target and clean_target.lower() in fname.lower():
+                match = True
+            elif target_int is not None:
+                fm = re.search(r'Invoice_0*(\d+)', fname)
+                if fm and int(fm.group(1)) == target_int:
+                    match = True
+            if match:
+                data = extract_invoice_data(os.path.join(OUTPUT_DIR, fname))
+                if data:
+                    return jsonify({'success': True, 'invoice': data, **data})
+
+    return jsonify({"error": "Invoice not found", "success": False}), 404
+
+
 @app.route('/api/load_invoice/<filename>')
 def api_load_invoice(filename):
     """Load invoice data from an existing Excel file."""

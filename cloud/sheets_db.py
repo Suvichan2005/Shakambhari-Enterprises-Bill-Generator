@@ -457,14 +457,33 @@ class GoogleSheetsDB:
         return True
     
     def get_invoice(self, invoice_number: str) -> Optional[Dict]:
-        """Get a specific invoice by number."""
+        """Get a specific invoice by number with tolerant matching."""
         target = (invoice_number or '').strip()
         if not target:
             return None
 
-        # Search across full history and return newest match.
+        # Search across full history
         invoices = self.get_all_invoices(limit=None)
-        return next((i for i in invoices if (i.get('invoice_number') or '').strip() == target), None)
+        # 1. Exact match
+        for i in invoices:
+            if (i.get('invoice_number') or '').strip() == target:
+                return i
+
+        # 2. Normalized prefix match (e.g. 61 vs 061, with or without FY)
+        target_norm = target.replace('/', '-').replace(' ', '').lower()
+        target_m = re.search(r'(\d+)', target)
+        target_num = int(target_m.group(1)) if target_m else None
+
+        for i in invoices:
+            inv_str = str(i.get('invoice_number') or '').strip()
+            inv_norm = inv_str.replace('/', '-').replace(' ', '').lower()
+            if inv_norm == target_norm:
+                return i
+            if target_num is not None:
+                inv_m = re.search(r'(\d+)', inv_str)
+                if inv_m and int(inv_m.group(1)) == target_num:
+                    return i
+        return None
     
     def get_last_invoice_number(self) -> Optional[str]:
         """Get the highest sequential invoice number for current FY."""

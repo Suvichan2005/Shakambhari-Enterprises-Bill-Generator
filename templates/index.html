@@ -1662,10 +1662,6 @@
                     <span class="btn-label-desktop">Past Invoices</span>
                 </button>
                 <div class="nav-divider"></div>
-                <button type="button" id="pwa_install_btn" class="btn btn-nav-outline btn-nav-icon" style="display:none; color: var(--primary);" onclick="triggerPwaInstall()" title="Install App to Home Screen">
-                    <span>📲</span>
-                    <span class="btn-label-desktop">Install App</span>
-                </button>
                 <button type="button" class="btn btn-nav-outline btn-nav-icon" onclick="openSettingsModal()" title="Settings">
                     <span>⚙️</span>
                 </button>
@@ -1733,12 +1729,8 @@
 
                     <div class="form-grid">
                         <div class="grid-2">
-                            <!-- Clean Invoice Number Input with quick past bills link -->
                             <div class="field-group">
-                                <div class="field-label">
-                                    <label for="invoice_number">Invoice Number</label>
-                                    <button type="button" class="btn-subtle-link" onclick="openInvoiceModal()">📁 Past bills</button>
-                                </div>
+                                <label class="field-label" for="invoice_number">Invoice Number</label>
                                 <input type="text" name="invoice_number" id="invoice_number" class="field-input mono" value="{{ suggested_invoice_number }}" placeholder="e.g. 62/2026-27" required oninput="updatePreview()">
                             </div>
 
@@ -1943,7 +1935,6 @@
                 <div class="slip-top-band">
                     <div>
                         <div class="slip-firm-name">{{ app_settings.company_name if app_settings else 'Shakambhari Enterprises' }}</div>
-                        <div class="slip-firm-sub">{{ app_settings.company_address if app_settings else 'Kolkata' }} • GSTIN: {{ app_settings.company_gstin if app_settings else '19AAAAA0000A1Z5' }}</div>
                     </div>
                     <div class="slip-tax-invoice-badge">Tax Invoice</div>
                 </div>
@@ -2661,7 +2652,7 @@
 
         function selectBuyer(profileId) {
             const buyer = buyerProfiles.find(b => b.profile_id === profileId);
-            if (!buyer) return;
+            if (!buyer) return false;
 
             document.getElementById('buyer_profile_id').value = buyer.profile_id;
             document.getElementById('buyer_profile_search').value = buyer.buyer_name;
@@ -2673,7 +2664,7 @@
             document.getElementById('buyer_card_state').textContent = `State: ${buyer.state || 'N/A'} (${buyer.state_code || ''})`;
 
             const isWB = String(buyer.state_code || '').trim() === '19';
-            document.getElementById('buyer_card_tax_rec').textContent = isWB ? 'Intra-State: CGST+SGST' : 'Inter-State: IGST 5%';
+            document.getElementById('buyer_card_tax_rec').textContent = isWB ? 'Intra-State: CGST+SGST' : 'Inter-State: IGST 12%';
 
             selectTaxMode(isWB ? 'CGST_SGST' : 'IGST');
 
@@ -2681,6 +2672,7 @@
             document.getElementById('buyer_card_address').textContent = cleanLines.join('\n');
 
             updatePreview();
+            return true;
         }
 
         // ================= TAX SELECTION =================
@@ -3202,46 +3194,137 @@
         async function loadPastInvoice(invNum) {
             try {
                 const resp = await fetch(`/api/invoice/${encodeURIComponent(invNum)}`);
+                if (!resp.ok) {
+                    const errObj = await resp.json().catch(() => ({}));
+                    throw new Error(errObj.error || `Server responded with ${resp.status}`);
+                }
                 const res = await resp.json();
-                if (res.invoice) {
-                    populateFormFromInvoice(res.invoice);
+                const inv = res.invoice || (res.invoice_number ? res : null);
+                if (inv) {
+                    populateFormFromInvoice(inv);
                     closeInvoiceModal();
-                    alert(`✓ Invoice ${invNum} loaded into form.`);
+                    if (window.innerWidth <= 900) {
+                        switchMobileView('form');
+                    }
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                } else {
+                    alert(`Could not extract data for invoice ${invNum}`);
                 }
             } catch (err) {
-                alert('Could not load invoice: ' + err);
+                console.error('Failed to load past invoice:', err);
+                alert('Could not load invoice: ' + err.message);
             }
         }
 
         function populateFormFromInvoice(inv) {
             if (!inv) return;
-            if (inv.invoice_number) document.getElementById('invoice_number').value = inv.invoice_number;
-            if (inv.invoice_date) document.getElementById('invoice_date').value = inv.invoice_date;
 
-            if (inv.buyer_profile_id) selectBuyer(inv.buyer_profile_id);
-            else if (inv.buyer_name) {
-                const b = buyerProfiles.find(x => normalizeName(x.buyer_name) === normalizeName(inv.buyer_name));
-                if (b) selectBuyer(b.profile_id);
+            // 1. Invoice Number
+            if (inv.invoice_number) {
+                document.getElementById('invoice_number').value = inv.invoice_number;
             }
 
-            if (inv.transport_mode) document.getElementById('transport_mode_input').value = inv.transport_mode;
-            if (inv.delivery_charge !== undefined) document.getElementById('delivery_charge').value = inv.delivery_charge;
+            // 2. Invoice Date (Normalize to YYYY-MM-DD for HTML5 date input)
+            if (inv.invoice_date) {
+                let dStr = String(inv.invoice_date).trim();
+                if (/^\d{2}\/\d{2}\/\d{4}$/.test(dStr)) {
+                    const parts = dStr.split('/');
+                    dStr = `${parts[2]}-${parts[1]}-${parts[0]}`;
+                }
+                document.getElementById('invoice_date').value = dStr;
+            }
 
-            if (inv.ship_from_details) {
-                document.getElementById('ship_from_enabled').checked = true;
+            // 3. E-Waybill Number & Date
+            const ewayNo = document.getElementById('ewaybill_number');
+            const ewayDt = document.getElementById('ewaybill_date');
+            if (ewayNo) ewayNo.value = inv.ewaybill_number || '';
+            if (ewayDt) {
+                let edStr = String(inv.ewaybill_date || '').trim();
+                if (/^\d{2}\/\d{2}\/\d{4}$/.test(edStr)) {
+                    const parts = edStr.split('/');
+                    edStr = `${parts[2]}-${parts[1]}-${parts[0]}`;
+                }
+                ewayDt.value = edStr;
+            }
+
+            // 4. Buyer Selection
+            let buyerFound = false;
+            if (inv.buyer_profile_id) {
+                buyerFound = selectBuyer(inv.buyer_profile_id);
+            }
+            if (!buyerFound && inv.buyer_name) {
+                const b = buyerProfiles.find(x => normalizeName(x.buyer_name) === normalizeName(inv.buyer_name));
+                if (b) {
+                    buyerFound = selectBuyer(b.profile_id);
+                }
+            }
+            // Fallback for ad-hoc or unindexed profiles
+            if (!buyerFound && inv.buyer_name) {
+                document.getElementById('buyer_profile_id').value = '';
+                document.getElementById('buyer_profile_search').value = inv.buyer_name;
+                document.getElementById('buyer_selected_card').style.display = 'block';
+                document.getElementById('buyer_card_name').textContent = inv.buyer_name;
+                document.getElementById('buyer_card_gstin').textContent = inv.buyer_gstin ? `GSTIN: ${inv.buyer_gstin}` : 'No GSTIN';
+                document.getElementById('buyer_card_state').textContent = `State: ${inv.buyer_state || 'N/A'} (${inv.buyer_state_code || ''})`;
+                const isWB = String(inv.buyer_state_code || '').trim() === '19';
+                document.getElementById('buyer_card_tax_rec').textContent = isWB ? 'Intra-State: CGST+SGST' : 'Inter-State: IGST 12%';
+                const bLines = Array.isArray(inv.buyer_details) ? inv.buyer_details : [inv.buyer_name];
+                document.getElementById('buyer_card_address').textContent = bLines.join('\n');
+            }
+
+            // 5. Transport Mode
+            if (inv.transport_mode) {
+                const tmInput = document.getElementById('transport_mode_input');
+                if (tmInput) tmInput.value = inv.transport_mode;
+            }
+
+            // 6. Delivery Charge
+            if (inv.delivery_charge !== undefined && inv.delivery_charge !== null) {
+                document.getElementById('delivery_charge').value = inv.delivery_charge;
+            }
+
+            // 7. Dispatch Origin (Ship From)
+            const sfCb = document.getElementById('ship_from_enabled');
+            if (inv.ship_from_details && (Array.isArray(inv.ship_from_details) ? inv.ship_from_details.length > 0 : String(inv.ship_from_details).trim())) {
+                if (sfCb) sfCb.checked = true;
                 toggleShipFromSection(true);
                 const str = Array.isArray(inv.ship_from_details) ? inv.ship_from_details.join('\n') : String(inv.ship_from_details);
                 document.getElementById('ship_from').value = str;
+            } else {
+                if (sfCb) sfCb.checked = false;
+                toggleShipFromSection(false);
+                document.getElementById('ship_from').value = '';
             }
 
-            if (inv.tax_type) selectTaxMode(inv.tax_type);
+            // 8. Consignee Address (Ship To)
+            const stCb = document.getElementById('ship_to_enabled');
+            if (inv.ship_to_details && (Array.isArray(inv.ship_to_details) ? inv.ship_to_details.length > 0 : String(inv.ship_to_details).trim())) {
+                if (stCb) stCb.checked = true;
+                toggleShipToSection(true);
+                const stStr = Array.isArray(inv.ship_to_details) ? inv.ship_to_details.join('\n') : String(inv.ship_to_details);
+                document.getElementById('ship_to').value = stStr;
+            } else {
+                if (stCb) stCb.checked = false;
+                toggleShipToSection(false);
+                document.getElementById('ship_to').value = '';
+            }
 
+            // 9. Tax Type
+            if (inv.tax_type) {
+                selectTaxMode(inv.tax_type);
+            }
+
+            // 10. Items
             const items = inv.items || [];
+            document.getElementById('items_container').innerHTML = '';
+            itemRowIndex = 0;
             if (items.length > 0) {
-                document.getElementById('items_container').innerHTML = '';
-                itemRowIndex = 0;
                 items.forEach(it => addItemRow(it));
+            } else {
+                addItemRow();
             }
+
+            updateTotals();
             updatePreview();
         }
 
